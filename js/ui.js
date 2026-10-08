@@ -19,6 +19,9 @@ const Progress = {
       hero: 'max',
       settings: { aim: 'auto', sound: true },
       seenEnemies: [],
+      daily: { day: '', streak: 0, loginClaimed: false, tasks: [], bonusClaimed: false, challengeDone: false, challengeLevel: 3, challengeMods: [] },
+      chests: { freeAt: 0, starOpened: 0 },
+      dayShift: 0,
       tutorialDone: false,
       tutorialOffered: false,
       hints: [],
@@ -201,6 +204,8 @@ const UI = {
 
   init() {
     Progress.load();
+    Daily.check();
+    setInterval(() => this.tick(), 1000);
     Game.aimMode = Progress.data.settings.aim;
     Game.seenEnemies = new Set(Progress.data.seenEnemies);
 
@@ -229,6 +234,7 @@ const UI = {
             <div class="chip coins" title="Монеты"><b>●</b><span data-bind="coins"></span></div>
             <div class="chip gold" title="Золото"><b>◆</b><span data-bind="gold"></span></div>
             <div class="chip stars" title="Звёзды"><b>★</b><span data-bind="stars"></span></div>
+            ${Game.debug ? '<button class="btn small debug" data-action="shift-day">+1 день</button>' : ''}
             <button class="icon-btn" data-action="sound" title="Звук"><span data-bind="sound"></span></button>
             <button class="icon-btn" data-action="settings" title="Настройки">⚙</button>
           </div>
@@ -269,7 +275,9 @@ const UI = {
     Game.startMenuScene(Progress.data.unlocked);
     this.menu.classList.remove('hidden');
     this.render();
+    Progress.save();
     if (!Progress.data.tutorialOffered) this.showTutorialOffer();
+    else if (Daily.loginAvailable()) this.showLogin();
     else this.menuHints();
   },
 
@@ -306,7 +314,11 @@ const UI = {
         </div>`,
     });
     const mark = () => { Progress.data.tutorialOffered = true; Progress.save(); };
-    m.actions.skip = () => { mark(); this.closeModal(m); };
+    m.actions.skip = () => {
+      mark();
+      this.closeModal(m);
+      if (Daily.loginAvailable()) this.showLogin();
+    };
     m.actions.learn = () => { mark(); this.startTutorial(); };
   },
 
@@ -357,6 +369,7 @@ const UI = {
     const fn = { battle: 'renderBattle', map: 'renderMap', arsenal: 'renderArsenal', heroes: 'renderHeroes', quests: 'renderQuests' }[this.tab];
     this.content.className = 'content tab-' + this.tab;
     this[fn]();
+    this.updateDots();
   },
 
   bind(name, value) {
@@ -392,7 +405,7 @@ const UI = {
           <div class="side-title">Впереди</div>
           ${nextWeapon ? `<div class="teaser"><canvas class="weapon-icon" data-weapon="${nextWeapon.id}"></canvas><div><b>${esc(nextWeapon.name)}</b><small>откроется на ур. ${nextWeapon.unlock}</small></div></div>` : ''}
           ${nextBoss ? `<div class="teaser boss"><i>☠</i><div><b>${esc(nextBoss.name)}</b><small>уровень ${nextBoss.level}</small></div></div>` : ''}
-          <div class="teaser"><i>✓</i><div><b>Задания</b><small>${QUESTS.filter(q => !d.claimed.includes(q.id) && Progress.stat(q.stat) >= q.goal).length} готово к награде</small></div></div>
+          <button class="teaser" data-tab="quests"><i>✓</i><div><b>Задания дня</b><small>${d.daily.tasks.filter(t => t.claimed).length}/3 · ${Daily.rewardsWaiting() ? 'есть награды!' : 'испытание ждёт'}</small></div></button>
         </div>
       </section>`;
     this.paintCanvases();
@@ -498,27 +511,177 @@ const UI = {
 
   renderQuests() {
     const d = Progress.data;
+    const dd = d.daily;
+    const rewardText = r => [r.coins ? `● ${r.coins}` : '', r.gold ? `◆ ${r.gold}` : ''].filter(Boolean).join(' ');
+
+    // Daily tasks
+    const tasks = dd.tasks.map((t, i) => {
+      const def = Daily.taskDef(t);
+      const done = t.progress >= t.goal;
+      return `
+        <div class="dtask ${t.claimed ? 'claimed' : done ? 'ready' : ''}">
+          <div class="dt-text"><b>${esc(def.text(t.goal))}</b>
+            <div class="bar"><i style="width:${Math.round(t.progress / t.goal * 100)}%"></i></div>
+          </div>
+          ${t.claimed ? '<span class="tag">✓</span>' : done
+            ? `<button class="btn primary small" data-action="claim-task" data-id="${i}">${rewardText(def.reward)}</button>`
+            : `<small class="dt-num">${t.progress}/${t.goal}<br>${rewardText(def.reward)}</small>`}
+        </div>`;
+    }).join('');
+    const bonusReady = Daily.bonusReady();
+    const bonus = `
+      <div class="dtask bonus ${dd.bonusClaimed ? 'claimed' : bonusReady ? 'ready' : ''}">
+        <div class="dt-text"><b>Все три задания</b><small>${dd.tasks.filter(t => t.claimed).length}/3</small></div>
+        ${dd.bonusClaimed ? '<span class="tag">✓</span>' : `<button class="btn ${bonusReady ? 'primary' : 'disabled'} small" data-action="claim-bonus">${rewardText(DAILY_BONUS)}</button>`}
+      </div>`;
+
+    // Challenge of the day
+    const mods = Daily.challengeMods().map(m => `<div class="mod" style="--acc:${m.color}"><b>${esc(m.name)}</b><small>${esc(m.desc)}</small></div>`).join('');
+
+    // Chests
+    const freeLeft = Daily.freeChestLeft();
+    const starReady = Daily.starChestsReady();
+    const starProg = Daily.starChestProgress();
+
+    // Permanent quests
     const sorted = QUESTS.slice().sort((a, b) => {
       const sa = d.claimed.includes(a.id) ? 2 : Progress.stat(a.stat) >= a.goal ? 0 : 1;
       const sb = d.claimed.includes(b.id) ? 2 : Progress.stat(b.stat) >= b.goal ? 0 : 1;
       return sa - sb;
     });
-    const rows = sorted.map(q => {
+    const quests = sorted.map(q => {
       const v = Math.min(q.goal, Progress.stat(q.stat));
       const done = v >= q.goal;
       const claimed = d.claimed.includes(q.id);
-      const reward = [q.reward.coins ? `● ${q.reward.coins}` : '', q.reward.gold ? `◆ ${q.reward.gold}` : ''].filter(Boolean).join(' ');
       return `
-        <div class="quest ${claimed ? 'claimed' : done ? 'ready' : ''}">
-          <div class="q-text"><b>${esc(q.text)}</b>
+        <div class="dtask ${claimed ? 'claimed' : done ? 'ready' : ''}">
+          <div class="dt-text"><b>${esc(q.text)}</b>
             <div class="bar"><i style="width:${Math.round(v / q.goal * 100)}%"></i></div>
-            <small>${v} / ${q.goal}</small>
           </div>
-          <div class="q-reward">${reward}</div>
-          ${claimed ? '<span class="tag">Получено</span>' : `<button class="btn ${done ? 'primary' : 'disabled'}" data-action="claim" data-id="${q.id}">Забрать</button>`}
+          ${claimed ? '<span class="tag">✓</span>' : done
+            ? `<button class="btn primary small" data-action="claim" data-id="${q.id}">${rewardText(q.reward)}</button>`
+            : `<small class="dt-num">${v}/${q.goal}<br>${rewardText(q.reward)}</small>`}
         </div>`;
     }).join('');
-    this.content.innerHTML = `<div class="vscroll quests">${rows}</div>`;
+
+    this.content.innerHTML = `
+      <div class="hscroll daily">
+        <div class="card dcard">
+          <div class="dhead"><b>Задания дня</b><small>новые через <span data-bind="day-left">${formatTime(Daily.msToNextDay())}</span></small></div>
+          <div class="dlist">${tasks}${bonus}</div>
+        </div>
+        <div class="card dcard challenge">
+          <div class="dhead"><b>Испытание дня</b><small>Уровень ${dd.challengeLevel}</small></div>
+          <div class="mods">${mods}</div>
+          <div class="ch-reward">Награда: <b>${rewardText(CHALLENGE_REWARD)}</b></div>
+          ${dd.challengeDone
+            ? '<div class="tag big">Пройдено ✓ — завтра новое</div>'
+            : '<button class="btn primary" data-action="challenge">Начать испытание</button>'}
+        </div>
+        <div class="card dcard chests">
+          <div class="dhead"><b>Сундуки</b></div>
+          <div class="chest-row ${freeLeft <= 0 ? 'ready' : ''}">
+            <div class="chest-ico free"><i></i></div>
+            <div class="chest-info"><b>Бесплатный</b><small>${freeLeft <= 0 ? 'Готов!' : `через <span data-bind="chest-left">${formatTime(freeLeft)}</span>`}</small></div>
+            <button class="btn ${freeLeft <= 0 ? 'primary' : 'disabled'} small" data-action="free-chest">Открыть</button>
+          </div>
+          <div class="chest-row ${starReady > 0 ? 'ready' : ''}">
+            <div class="chest-ico star"><i></i></div>
+            <div class="chest-info"><b>Звёздный ${starReady > 1 ? `×${starReady}` : ''}</b>
+              <div class="bar"><i style="width:${starReady > 0 ? 100 : Math.round(starProg / STAR_CHEST_EVERY * 100)}%"></i></div>
+              <small>${starReady > 0 ? 'Готов!' : `★ ${starProg}/${STAR_CHEST_EVERY}`}</small></div>
+            <button class="btn ${starReady > 0 ? 'primary' : 'disabled'} small" data-action="star-chest">Открыть</button>
+          </div>
+          <small class="note">Звёздный сундук — за каждые ${STAR_CHEST_EVERY} звёзд. Бесплатный — раз в ${FREE_CHEST_HOURS} часа.</small>
+        </div>
+        <div class="card dcard achievements">
+          <div class="dhead"><b>Достижения</b></div>
+          <div class="dlist vscroll">${quests}</div>
+        </div>
+      </div>`;
+  },
+
+  // ---------- Daily windows ----------
+
+  showLogin() {
+    const dd = Progress.data.daily;
+    const cards = DAILY_LOGIN.map((r, i) => {
+      const day = i + 1;
+      const state = day < dd.streak ? 'past' : day === dd.streak ? 'today' : 'future';
+      const what = r.chest
+        ? '<div class="lg-ico chest-ico free"><i></i></div><small>Сундук</small>'
+        : `<div class="lg-ico">${r.gold ? '◆' : '●'}</div><small>${[r.coins ? `● ${r.coins}` : '', r.gold ? `◆ ${r.gold}` : ''].filter(Boolean).join(' ')}</small>`;
+      return `<div class="lg-day ${state} ${r.gold ? 'gold' : ''}"><b>День ${day}</b>${what}${state === 'past' ? '<em>✓</em>' : ''}</div>`;
+    }).join('');
+    const m = this.modal({
+      cls: 'login',
+      html: `
+        <h2>Ежедневная награда</h2>
+        <p class="sub">${dd.streak > 1 ? `Ты заходишь ${dd.streak} дня подряд!` : 'Заходи каждый день — награды растут.'} Пропустишь день — счёт начнётся заново.</p>
+        <div class="lg-row">${cards}</div>
+        <div class="buttons"><button class="btn primary big" data-action="take">Забрать</button></div>`,
+    });
+    m.actions.take = () => {
+      const got = Daily.claimLogin();
+      this.closeModal(m);
+      this.render();
+      if (got && DAILY_LOGIN[dd.streak - 1].chest) this.showChest('Сундук дня', got);
+      else this.menuHints();
+    };
+  },
+
+  showChest(title, loot) {
+    const m = this.modal({
+      cls: 'chest-open',
+      html: `
+        <h2>${esc(title)}</h2>
+        <div class="chest-big"><div class="lid"></div><div class="box"></div><div class="burst"></div></div>
+        <div class="loot">
+          ${loot.coins ? `<span class="coins">● +${loot.coins}</span>` : ''}
+          ${loot.gold ? `<span class="gold">◆ +${loot.gold}</span>` : ''}
+        </div>
+        <div class="buttons"><button class="btn primary" data-action="ok">Забрать</button></div>`,
+      onEscape: () => close(),
+    });
+    const close = () => { this.closeModal(m); this.render(); };
+    m.actions.ok = close;
+  },
+
+  playChallenge() {
+    this.closeAllModals();
+    this.hideMenu();
+    Game.loadout = Progress.loadout();
+    Game.aimMode = Progress.data.settings.aim;
+    Game.start(Progress.data.daily.challengeLevel, { config: Daily.challengeConfig() });
+  },
+
+  // Every second while the menu is open: timers, day change, red dots.
+  tick() {
+    if (!Progress.data) return;
+    const newDay = Daily.check();
+    if (this.menu.classList.contains('hidden')) return;
+    if (newDay) {
+      this.render();
+      if (Progress.data.tutorialOffered && !this.modals.length && Daily.loginAvailable()) this.showLogin();
+      return;
+    }
+    this.bind('day-left', formatTime(Daily.msToNextDay()));
+    const left = Daily.freeChestLeft();
+    if (left > 0) this.bind('chest-left', formatTime(left));
+    const dot = Daily.rewardsWaiting();
+    if (dot !== this.lastDot || (left <= 0 && this.lastLeft > 0)) this.render();
+    this.lastLeft = left;
+  },
+
+  updateDots() {
+    const dot = Daily.rewardsWaiting();
+    this.lastDot = dot;
+    this.menu.querySelectorAll('.tab').forEach(b => {
+      const show = b.dataset.tab === 'quests' && dot;
+      let el = b.querySelector('.dot');
+      if (show && !el) { el = document.createElement('span'); el.className = 'dot'; b.appendChild(el); }
+      if (!show && el) el.remove();
+    });
   },
 
   // Canvas portraits need layout first.
@@ -581,6 +744,34 @@ const UI = {
       case 'claim':
         if (Progress.claimQuest(QUESTS.find(q => q.id === id))) this.render();
         break;
+      case 'claim-task':
+        if (Daily.claimTask(Number(id))) this.render();
+        break;
+      case 'claim-bonus':
+        if (Daily.claimBonus()) this.render();
+        break;
+      case 'challenge':
+        this.playChallenge();
+        break;
+      case 'free-chest': {
+        const loot = Daily.openFreeChest();
+        if (loot) this.showChest('Бесплатный сундук', loot);
+        break;
+      }
+      case 'star-chest': {
+        const loot = Daily.openStarChest();
+        if (loot) this.showChest('Звёздный сундук', loot);
+        break;
+      }
+      case 'shift-day':
+        // Debug: move the clock one day forward to test the daily rollover.
+        d.dayShift = (d.dayShift || 0) + 1;
+        Progress.save();
+        this.closeAllModals();
+        Daily.check();
+        this.render();
+        if (Daily.loginAvailable()) this.showLogin();
+        break;
       default: {
         // Modal buttons
         const top = this.modals[this.modals.length - 1];
@@ -615,6 +806,7 @@ const UI = {
   // ---------- Windows ----------
 
   modal({ cls = '', html, actions = {}, onEscape = null }) {
+    document.getElementById('toast').classList.add('hidden');
     const el = document.createElement('div');
     el.className = 'modal-wrap';
     el.innerHTML = `<div class="modal ${cls}">${html}</div>`;
@@ -720,7 +912,7 @@ const UI = {
     const re = () => { m.el.querySelector('.modal').innerHTML = this.pauseHtml(); };
     Object.assign(m.actions, {
       resume,
-      retry: () => (Game.tutorial ? this.startTutorial() : this.startLevel(Game.level)),
+      retry: () => (Game.tutorial ? this.startTutorial() : Game.config.challenge ? this.playChallenge() : this.startLevel(Game.level)),
       menu: () => this.showMenu(),
       'aim-auto': () => this.setAim('auto', re),
       'aim-manual': () => this.setAim('manual', re),
@@ -746,7 +938,21 @@ const UI = {
   },
 
   onVictory(r) {
-    const rew = Progress.recordWin(r);
+    let rew;
+    if (r.challenge) {
+      // The challenge doesn't touch the map: coins + the daily reward.
+      const d = Progress.data;
+      d.coins += r.coins + r.bonus;
+      d.stats.kills += r.kills;
+      d.stats.bestStreak = Math.max(d.stats.bestStreak, r.best || 0);
+      const ch = Daily.completeChallenge();
+      rew = { coins: r.coins + r.bonus + (ch ? ch.coins : 0), gold: ch ? ch.gold : 0, newWeapon: null };
+    } else {
+      rew = Progress.recordWin(r);
+    }
+    Daily.track('wins', 1);
+    Daily.track('stars', r.stars);
+    Progress.save();
     const goals = r.goals.map(g => `
       <li class="${g.state === 'ok' ? 'ok' : 'fail'}"><i>${g.state === 'ok' ? '✔' : '✘'}</i><span>${esc(g.text)}</span><small>${esc(g.progress || '')}</small></li>`).join('');
     const mm = Math.floor(r.time / 60), ss = String(Math.floor(r.time % 60)).padStart(2, '0');
@@ -754,8 +960,8 @@ const UI = {
     const m = this.modal({
       cls: 'result victory',
       html: `
-        <h2>ПОБЕДА!</h2>
-        <p class="sub">Уровень ${r.level} · ${esc(districtOf(r.level).name)}</p>
+        <h2>${r.challenge ? 'ИСПЫТАНИЕ ПРОЙДЕНО!' : 'ПОБЕДА!'}</h2>
+        <p class="sub">${r.challenge ? 'Испытание дня' : `Уровень ${r.level}`} · ${esc(districtOf(r.level).name)}</p>
         <div class="big-stars">${[0, 1, 2].map(i => `<span class="${i < r.stars ? 'on' : ''}" style="animation-delay:${0.35 + i * 0.45}s">★</span>`).join('')}</div>
         <ul class="goals">${goals}</ul>
         <div class="result-stats">☠ ${r.kills} · ⏱ ${mm}:${ss} · серия ×${r.best}</div>
@@ -763,7 +969,7 @@ const UI = {
         <div class="buttons">
           <button class="btn" data-action="menu">В меню</button>
           <button class="btn" data-action="retry">Заново</button>
-          ${last ? '' : '<button class="btn primary" data-action="next">Дальше</button>'}
+          ${last || r.challenge ? '' : '<button class="btn primary" data-action="next">Дальше</button>'}
         </div>`,
     });
     const after = then => () => {
@@ -773,7 +979,7 @@ const UI = {
     };
     Object.assign(m.actions, {
       menu: after(() => this.showMenu()),
-      retry: after(() => this.startLevel(r.level)),
+      retry: after(() => (r.challenge ? this.playChallenge() : this.startLevel(r.level))),
       next: after(() => this.play(r.level + 1)),
     });
   },
@@ -797,7 +1003,7 @@ const UI = {
     Object.assign(m.actions, {
       menu: () => this.showMenu(),
       arsenal: () => this.showMenu('arsenal'),
-      retry: () => this.startLevel(r.level),
+      retry: () => (r.challenge ? this.playChallenge() : this.startLevel(r.level)),
     });
   },
 

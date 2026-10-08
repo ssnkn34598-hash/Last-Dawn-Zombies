@@ -178,9 +178,11 @@ const Game = {
   finalWon: false,
   seenEnemies: new Set(),
 
-  start(level) {
+  // opts.config: a ready level config (e.g. the challenge of the day with modifiers).
+  start(level, opts = {}) {
     this.level = Math.max(1, Math.min(100, level));
-    this.config = levelConfig(this.level);
+    this.config = opts.config || levelConfig(this.level);
+    this.flags = this.config.flags || {};
     this.arena = { w: this.config.arena.w, h: this.config.arena.h };
     this.district = this.config.district;
 
@@ -224,6 +226,16 @@ const Game = {
     this.strikes = [];
     this.buffs = [];
 
+    // Challenge modifiers that touch the hero and the arena.
+    const f = this.flags;
+    if (f.heroHp) {
+      this.hero.maxHp = Math.round(this.hero.maxHp * f.heroHp);
+      this.hero.hp = this.hero.maxHp;
+    }
+    if (f.heroDmg) this.hero.stats.damage *= f.heroDmg;
+    if (f.darkness) this.darknessTarget = this.darkness = f.darkness;
+    if (f.fog) this.fog = true;
+
     this.camera.x = this.hero.x;
     this.camera.y = this.hero.y;
     this.time = 0;
@@ -257,6 +269,7 @@ const Game = {
     };
     this.arena = { w: 1500, h: 1000 };
     this.district = district;
+    this.flags = {};
     const rng = makeRng(4242);
     this.obstacles = generateObstacles(this.arena, rng).slice(0, 7);
     this.barrels = [];
@@ -303,6 +316,11 @@ const Game = {
     this.state = s;
     this.stateTime = 0;
     if (s === 'intro') this.emit('enemySeen', this.config.newEnemy);
+  },
+
+  // Daily task counters (kills, skill uses, barrels...). Not in the tutorial.
+  stat(name, n) {
+    if (!this.tutorial && typeof Daily !== 'undefined') Daily.track(name, n);
   },
 
   // UI listens to game events (victory, defeat, enemySeen) through hooks.
@@ -781,6 +799,7 @@ const Game = {
       best: this.streak.best,
       level: this.level,
       boss: this.config.boss,
+      challenge: !!this.config.challenge,
     };
     this.emit('victory', this.result);
   },
@@ -801,6 +820,7 @@ const Game = {
       waves: this.config.waves.length,
       level: this.level,
       best: this.streak.best,
+      challenge: !!this.config.challenge,
     };
     this.emit('defeat', this.result);
   },
@@ -811,6 +831,7 @@ const Game = {
     const h = this.hero, sk = h.skill;
     if (this.state !== 'play' || h.dead || sk.t > 0) return;
     sk.t = sk.cd;
+    this.stat('skill', 1);
     const p = sk.power;
     const f = h.facing;
 
@@ -936,6 +957,7 @@ const Game = {
   startMenuScene(level) {
     this.level = Math.max(1, Math.min(100, level));
     this.config = levelConfig(this.level);
+    this.flags = {};
     this.arena = { w: this.config.arena.w, h: this.config.arena.h };
     this.district = this.config.district;
     const rng = makeRng(this.level * 7919 + 17);
@@ -1032,7 +1054,14 @@ const Game = {
     while (h.xp >= xpToLevel(h.lvl)) {
       h.xp -= xpToLevel(h.lvl);
       h.lvl++;
-      this.pendingPerks++;
+      if (this.flags && this.flags.noPerks) {
+        // "No perks" challenge: a level-up heals instead.
+        const heal = Math.min(h.maxHp - h.hp, 25);
+        h.hp += heal;
+        Fx.text(h.x, h.y - 30, '+' + Math.round(heal), '#5aff7a', 18);
+      } else {
+        this.pendingPerks++;
+      }
       Fx.ring(h.x, h.y, 70, '#5ad8ff', 0.5, 5);
     }
   },
@@ -1056,6 +1085,7 @@ const Game = {
     const perk = this.perkChoices[i];
     if (!perk || this.stateTime < 0.25) return;
     this.applyPerk(perk.id);
+    this.stat('perks', 1);
     this.pendingPerks--;
     this.perkChoices = [];
     this.setState('play');
@@ -1194,8 +1224,10 @@ const Game = {
     this.kills++;
     this.drop(z);
 
+    this.stat('kills', 1);
     const boom = this.hero.stats.boom;
-    if (boom && opt.kind !== 'perk-boom' && Math.random() < 0.2 * boom) {
+    const boomChance = 0.2 * boom + ((this.flags && this.flags.boom) || 0);
+    if (boomChance > 0 && opt.kind !== 'perk-boom' && Math.random() < boomChance) {
       Fx.explosion(z.x, z.y, 70);
       for (const o of this.zombies) {
         if (o.state === 'alive' && Math.hypot(o.x - z.x, o.y - z.y) < 70 + o.r) {
@@ -1208,6 +1240,7 @@ const Game = {
     s.count++;
     s.timer = STREAK_TIME;
     s.best = Math.max(s.best, s.count);
+    this.stat('streak', s.count);
     if (STREAK_MILESTONES[s.count]) {
       this.banner(`СЕРИЯ ×${s.count}`, '#ff7a3a', 1.8, STREAK_MILESTONES[s.count]);
       Fx.addShake(4);
@@ -1221,8 +1254,9 @@ const Game = {
       this.pickups.push({ kind, value, x: z.x, y: z.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: DROPS.lifetime, magnet: false, bob: Math.random() * 6 });
     };
     spray('xp', z.def.xp);
-    if (Math.random() < z.def.coin) spray('coin', z.def.xp >= 5 ? 3 : 1);
-    if (Math.random() < DROPS.medkitChance) spray('medkit', DROPS.medkitHeal);
+    const f = this.flags || {};
+    if (Math.random() < z.def.coin) spray('coin', (z.def.xp >= 5 ? 3 : 1) * (f.coinMul || 1));
+    if (!f.noMedkit && Math.random() < DROPS.medkitChance) spray('medkit', DROPS.medkitHeal);
   },
 
   // Area damage. heroDamage > 0 only for hazards (barrels, bloaters).
@@ -1268,6 +1302,7 @@ const Game = {
         b.fuse -= dt;
         if (b.fuse <= 0) {
           b.dead = true;
+          this.stat('barrels', 1);
           this.explode(b.x, b.y, 125, 90, 'barrel', 28);
         }
       }
@@ -1336,6 +1371,7 @@ const Game = {
           this.addXp(p.value);
         } else if (p.kind === 'coin') {
           h.coins += p.value;
+          this.stat('coins', p.value);
           Fx.text(h.x, h.y - 30, '+' + p.value, '#ffd23a', 13);
         } else if (p.kind === 'medkit') {
           const heal = Math.min(p.value, h.maxHp - h.hp);

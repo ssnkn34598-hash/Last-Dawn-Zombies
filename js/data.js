@@ -206,6 +206,53 @@ const QUESTS = [
   { id: 'hero2',     text: 'Открой второго героя',     stat: 'heroes',    goal: 2,     reward: { coins: 500 } },
 ];
 
+// ---------- Ежедневное ----------
+
+// Награды за вход 7 дней подряд (потом круг заново).
+const DAILY_LOGIN = [
+  { coins: 100 },
+  { coins: 150 },
+  { gold: 3 },
+  { coins: 250 },
+  { chest: true },
+  { coins: 400 },
+  { coins: 300, gold: 15 },
+];
+
+// Пул заданий дня: каждый день выбираются 3 разных. max — считается лучший результат, а не сумма.
+const DAILY_TASKS = [
+  { id: 'kills',     stat: 'kills',     text: n => `Убей ${n} зомби`,            goals: [60, 100, 150], reward: { coins: 120 } },
+  { id: 'wins',      stat: 'wins',      text: n => `Пройди ${n} уровня`,         goals: [2, 3],         reward: { coins: 150 } },
+  { id: 'stars',     stat: 'stars',     text: n => `Получи ${n} звёзд`,          goals: [4, 6],         reward: { coins: 150 } },
+  { id: 'skill',     stat: 'skill',     text: n => `Используй навык ${n} раз`,   goals: [5, 8],         reward: { coins: 100 } },
+  { id: 'barrels',   stat: 'barrels',   text: n => `Взорви ${n} бочек`,          goals: [3, 5],         reward: { coins: 100 } },
+  { id: 'coins',     stat: 'coins',     text: n => `Подбери ${n} монет`,         goals: [30, 60],       reward: { coins: 120 } },
+  { id: 'perks',     stat: 'perks',     text: n => `Возьми ${n} улучшений`,      goals: [5, 8],         reward: { coins: 100 } },
+  { id: 'streak',    stat: 'streak',    text: n => `Сделай серию ×${n}`,         goals: [15, 25], max: true, reward: { coins: 150 } },
+  { id: 'challenge', stat: 'challenge', text: () => 'Пройди Испытание дня',      goals: [1],            reward: { coins: 200 } },
+];
+const DAILY_BONUS = { coins: 200, gold: 5 };
+
+// Модификаторы Испытания дня (каждый день — два случайных).
+const CHALLENGE_MODS = [
+  { id: 'fast',      name: 'Быстрые мертвецы',  desc: 'Зомби на 35% быстрее',                 color: '#ff8a4a' },
+  { id: 'tough',     name: 'Толстокожие',       desc: 'У зомби на 60% больше здоровья',       color: '#9fb3c8' },
+  { id: 'horde',     name: 'Орда',              desc: 'В полтора раза больше зомби',          color: '#d84a4a' },
+  { id: 'glass',     name: 'Стеклянная пушка',  desc: 'Здоровья вдвое меньше, урон +50%',     color: '#8fd8ff' },
+  { id: 'night',     name: 'Тёмная ночь',       desc: 'Видно только вокруг героя',            color: '#6a5aff' },
+  { id: 'fog',       name: 'Туман',             desc: 'Улицы затянуло туманом',               color: '#a0a0b0' },
+  { id: 'nomed',     name: 'Без аптечек',       desc: 'Аптечки не выпадают',                  color: '#ff5a6a' },
+  { id: 'explosive', name: 'Взрывоопасно',      desc: 'Больше бочек, зомби иногда взрываются', color: '#ffb547' },
+  { id: 'runners',   name: 'Марафон',           desc: 'Все бродяги стали бегунами',           color: '#ffd36b' },
+  { id: 'noperks',   name: 'Без улучшений',     desc: 'Новый уровень лечит, а не улучшает',   color: '#c8b898' },
+  { id: 'goldrush',  name: 'Золотая лихорадка', desc: 'Монеты из зомби — вдвое дороже',       color: '#ffd23a' },
+];
+const CHALLENGE_REWARD = { coins: 300, gold: 8 };
+
+// Сундуки: за каждые 15 звёзд и бесплатный раз в FREE_CHEST_HOURS часа.
+const STAR_CHEST_EVERY = 15;
+const FREE_CHEST_HOURS = 4;
+
 const DROPS = {
   medkitChance: 0.035,
   medkitHeal: 25,
