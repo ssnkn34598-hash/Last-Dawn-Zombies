@@ -42,6 +42,9 @@ const Zombies = {
       fuse: -1,
     };
     game.zombies.push(z);
+    if (game.config && type === game.config.newEnemy && type !== 'walker' && typeof Hints !== 'undefined') {
+      Hints.trigger('enemy_' + type, `Вот он — ${def.name}! ${def.desc}`);
+    }
     Fx.burst(x, y, 12, { speed: 120, life: 0.6, size: 4, color: ['#3b2f22', '#4a3a28', '#2a2118'], kind: 'dirt' });
     Render.crack(x, y, z.r);
     return z;

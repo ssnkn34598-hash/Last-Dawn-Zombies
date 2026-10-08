@@ -62,6 +62,7 @@ const Bosses = {
     Render.crack(x, y, z.r * 1.6);
     Fx.addShake(10);
     if (def.darkness) game.darknessTarget = def.darkness[0];
+    if (typeof Hints !== 'undefined') Hints.trigger('boss');
     return z;
   },
 
@@ -140,6 +141,7 @@ const Bosses = {
     game.banner('ЯРОСТЬ!', '#ff3a2a', 2.2, `«${phrase}»`, true);
     Fx.ring(z.x, z.y, 160, '#ff3a2a', 0.6, 8);
     Fx.addShake(8);
+    if (typeof Hints !== 'undefined') Hints.trigger('rage');
   },
 
   // ---------- Attacks ----------

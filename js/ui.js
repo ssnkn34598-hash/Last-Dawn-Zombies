@@ -19,6 +19,9 @@ const Progress = {
       hero: 'max',
       settings: { aim: 'auto', sound: true },
       seenEnemies: [],
+      tutorialDone: false,
+      tutorialOffered: false,
+      hints: [],
       seenStories: [],
       seenWeapons: ['pistol'],
       bossesBeaten: [],
@@ -204,6 +207,12 @@ const UI = {
     Game.hooks.victory = r => this.onVictory(r);
     Game.hooks.defeat = r => this.onDefeat(r);
     Game.hooks.pause = () => this.showPause();
+    Game.hooks.tutorialDone = () => this.onTutorialDone();
+    Game.hooks.tutorialSkip = () => this.confirm('Пропустить обучение?', 'Его можно пройти позже: Настройки → «Пройти обучение».', () => {
+      Progress.data.tutorialOffered = true;
+      Progress.save();
+      this.showMenu();
+    }, () => Game.resume());
     Game.hooks.enemySeen = type => {
       if (type && !Progress.data.seenEnemies.includes(type)) {
         Progress.data.seenEnemies.push(type);
@@ -229,6 +238,7 @@ const UI = {
           ${TABS.map(t => `<button class="tab" data-tab="${t.id}"><i>${t.icon}</i><span>${t.name}</span></button>`).join('')}
         </nav>
       </div>
+      <div id="toast" class="toast hidden"><canvas class="raven" data-raven="1"></canvas><span></span></div>
       <div id="modals"></div>`;
     this.menu = document.getElementById('menu');
     this.content = document.getElementById('tab-content');
@@ -259,10 +269,82 @@ const UI = {
     Game.startMenuScene(Progress.data.unlocked);
     this.menu.classList.remove('hidden');
     this.render();
+    if (!Progress.data.tutorialOffered) this.showTutorialOffer();
+    else this.menuHints();
+  },
+
+  // One-time hints in the menu when something new can be bought.
+  menuHints() {
+    const d = Progress.data;
+    const lvl = Progress.weaponLevel(d.weapon);
+    if (lvl < ECONOMY.weaponMaxLevel && d.coins >= ECONOMY.weaponCost(lvl)) Hints.trigger('menuUpgrade');
+    else if (Object.entries(HEROES).some(([id, h]) => !d.heroes[id] && d.gold >= h.gold)) Hints.trigger('menuHero');
+  },
+
+  toast(text) {
+    const el = document.getElementById('toast');
+    el.querySelector('span').textContent = text;
+    el.classList.remove('hidden');
+    this.paintCanvases(el);
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => el.classList.add('hidden'), 5500);
+  },
+
+  // ---------- Tutorial ----------
+
+  showTutorialOffer() {
+    const m = this.modal({
+      cls: 'tutorial-offer',
+      html: `
+        <canvas class="raven big" data-raven="1"></canvas>
+        <h2>Привет, я Ворон</h2>
+        <p>Город захватили мертвецы. Я покажу, как здесь выжить: 8 коротких шагов, пара минут.</p>
+        <p class="hint">За обучение — награда: ● ${ECONOMY.tutorialReward.coins} и ◆ ${ECONOMY.tutorialReward.gold}.</p>
+        <div class="buttons">
+          <button class="btn" data-action="skip">Пропустить</button>
+          <button class="btn primary" data-action="learn">Пройти обучение</button>
+        </div>`,
+    });
+    const mark = () => { Progress.data.tutorialOffered = true; Progress.save(); };
+    m.actions.skip = () => { mark(); this.closeModal(m); };
+    m.actions.learn = () => { mark(); this.startTutorial(); };
+  },
+
+  startTutorial() {
+    this.closeAllModals();
+    this.hideMenu();
+    Game.loadout = Progress.loadout();
+    Game.aimMode = Progress.data.settings.aim;
+    Game.startTutorial();
+  },
+
+  onTutorialDone() {
+    const d = Progress.data;
+    const first = !d.tutorialDone;
+    const r = ECONOMY.tutorialReward;
+    d.tutorialDone = true;
+    d.tutorialOffered = true;
+    if (first) {
+      d.coins += r.coins;
+      d.gold += r.gold;
+    }
+    Progress.save();
+    Game.setState('paused');
+    const m = this.modal({
+      cls: 'tutorial-offer',
+      html: `
+        <canvas class="raven big" data-raven="1"></canvas>
+        <h2>Обучение пройдено!</h2>
+        <p>Теперь ты готов. Дальше — Окраина и первые волны. Я буду подсказывать по пути.</p>
+        ${first ? `<div class="rewards"><span class="coins">● +${r.coins}</span><span class="gold">◆ +${r.gold}</span></div>` : '<p class="hint">Награда уже получена раньше.</p>'}
+        <div class="buttons"><button class="btn primary" data-action="ok">В бой!</button></div>`,
+    });
+    m.actions.ok = () => this.showMenu('battle');
   },
 
   hideMenu() {
     this.menu.classList.add('hidden');
+    document.getElementById('toast').classList.add('hidden');
   },
 
   render() {
@@ -444,6 +526,7 @@ const UI = {
     requestAnimationFrame(() => {
       root.querySelectorAll('canvas[data-hero]').forEach(c => Render.portraitHero(c, c.dataset.hero));
       root.querySelectorAll('canvas[data-weapon]').forEach(c => Render.portraitWeapon(c, WEAPONS.find(w => w.id === c.dataset.weapon)));
+      root.querySelectorAll('canvas[data-raven]').forEach(c => Render.portraitRaven(c));
       root.querySelectorAll('canvas[data-story]').forEach(c => Render.storyArt(c, DISTRICTS.find(d => d.id === c.dataset.story)));
     });
   },
@@ -592,6 +675,7 @@ const UI = {
         this.closeAllModals();
         this.showMenu('battle');
       }),
+      'tutorial': () => this.startTutorial(),
       'close': () => this.closeModal(m),
     });
   },
@@ -608,19 +692,21 @@ const UI = {
         </div>
       </div>
       <div class="buttons">
+        <button class="btn" data-action="tutorial">Пройти обучение</button>
         <button class="btn danger" data-action="reset">Сбросить прогресс</button>
         <button class="btn primary" data-action="close">Готово</button>
       </div>`;
   },
 
-  confirm(title, text, yes) {
+  confirm(title, text, yes, no) {
+    const cancel = () => { this.closeModal(m); if (no) no(); };
     const m = this.modal({
       cls: 'confirm',
       html: `<h2>${esc(title)}</h2><p>${esc(text)}</p>
         <div class="buttons"><button class="btn" data-action="no">Отмена</button><button class="btn danger" data-action="yes">Да</button></div>`,
-      onEscape: () => this.closeModal(m),
+      onEscape: cancel,
     });
-    m.actions.no = () => this.closeModal(m);
+    m.actions.no = cancel;
     m.actions.yes = () => { this.closeModal(m); yes(); };
   },
 
@@ -634,7 +720,7 @@ const UI = {
     const re = () => { m.el.querySelector('.modal').innerHTML = this.pauseHtml(); };
     Object.assign(m.actions, {
       resume,
-      retry: () => this.startLevel(Game.level),
+      retry: () => (Game.tutorial ? this.startTutorial() : this.startLevel(Game.level)),
       menu: () => this.showMenu(),
       'aim-auto': () => this.setAim('auto', re),
       'aim-manual': () => this.setAim('manual', re),
@@ -643,9 +729,12 @@ const UI = {
 
   pauseHtml() {
     const dist = Game.district;
+    const where = Game.tutorial
+      ? `Обучение · шаг ${Game.tutorial.step + 1}/${TUTORIAL_STEPS}`
+      : `Уровень ${Game.level} · ${esc(dist.name)} · волна ${Game.waveIndex + 1}/${Game.config.waves.length}`;
     return `
       <h2>Пауза</h2>
-      <p class="sub">Уровень ${Game.level} · ${esc(dist.name)} · волна ${Game.waveIndex + 1}/${Game.config.waves.length}</p>
+      <p class="sub">${where}</p>
       ${this.aimSwitch()}
       <div class="buttons col">
         <button class="btn primary big" data-action="resume">Продолжить</button>

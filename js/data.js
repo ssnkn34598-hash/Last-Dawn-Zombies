@@ -187,6 +187,7 @@ const ECONOMY = {
   bossGold: 25,          // первая победа над боссом
   threeStarGold: 2,      // первые три звезды на уровне
   startCoins: 0,
+  tutorialReward: { coins: 200, gold: 10 },
 };
 
 // Задания (постоянные). stat — счётчик из сохранения.

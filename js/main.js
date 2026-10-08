@@ -240,9 +240,12 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
+Game.touch = isTouch;
 UI.init();
-// ?debug&level=N jumps straight into a level; otherwise start in the menu.
-if (Game.debug && params.get('level')) UI.startLevel(startLevel);
+// ?debug&level=N jumps straight into a level, ?debug&tutorial replays the
+// tutorial; otherwise start in the menu.
+if (Game.debug && params.has('tutorial')) UI.startTutorial();
+else if (Game.debug && params.get('level')) UI.startLevel(startLevel);
 else UI.showMenu();
 Game.clampCamera(view);
 canvas.style.cursor = 'crosshair';

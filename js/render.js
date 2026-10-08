@@ -484,6 +484,7 @@ const Render = {
     for (const z of game.zombies) if (vis(z.x, z.y, z.boss ? 200 : 60)) this.drawZombie(ctx, z, game.time);
     this.drawTargetMarker(ctx, game);
     this.drawSkillFx(ctx, game);
+    this.drawTutorialWorld(ctx, game);
     if (!game.hero.dead) this.drawHero(ctx, game.hero, game);
     this.drawSaws(ctx, game);
     this.drawProjectiles(ctx);
@@ -508,7 +509,9 @@ const Render = {
       this.drawJoystick(ctx, input.aimStick);
       if (game.aimMode === 'manual' && input.pointer && !input.aimStick.active) this.drawCrosshair(ctx, input.pointer.x, input.pointer.y, game);
     }
+    this.drawEdgeArrow(ctx, game, view, camX, camY);
     this.drawOverlay(ctx, game, view, input);
+    this.drawHintToast(ctx, game, view);
   },
 
   drawSaws(ctx, game) {
@@ -1860,6 +1863,196 @@ const Render = {
     ctx.fillRect(x0 + L - 4, y0 - bh * 0.3, 4, bh * 0.6);
   },
 
+  // ---------- Tutorial & Raven ----------
+
+  // Raven, the guide: a black bird head with an amber eye.
+  drawRaven(ctx, x, y, s, t = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.rotate(Math.sin(t * 2) * 0.06);
+    // Glow
+    const g = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
+    g.addColorStop(0, 'rgba(255,181,71,0.35)');
+    g.addColorStop(1, 'rgba(255,181,71,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+    // Body and wing
+    ctx.fillStyle = '#121218';
+    ctx.beginPath(); ctx.ellipse(-4, 8, 14, 11, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1e1e28';
+    ctx.beginPath(); ctx.ellipse(-8, 10, 10, 6, -0.6, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.fillStyle = '#16161e';
+    ctx.beginPath(); ctx.arc(4, -6, 10, 0, Math.PI * 2); ctx.fill();
+    // Tuft
+    ctx.beginPath(); ctx.moveTo(-2, -14); ctx.lineTo(-7, -20); ctx.lineTo(2, -15); ctx.closePath(); ctx.fill();
+    // Beak
+    ctx.fillStyle = '#6a6a74';
+    ctx.beginPath(); ctx.moveTo(12, -9); ctx.lineTo(24, -4); ctx.lineTo(12, -2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#4a4a54';
+    ctx.beginPath(); ctx.moveTo(12, -4); ctx.lineTo(22, -3); ctx.lineTo(12, -1); ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#ffb547';
+    ctx.beginPath(); ctx.arc(7, -8, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(7.6, -8, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  },
+
+  portraitRaven(canvas) {
+    const { ctx, w, h } = this.prepCanvas(canvas);
+    this.drawRaven(ctx, w / 2, h / 2 + 2, Math.min(w, h) / 52);
+  },
+
+  // Marker, danger circle and pointer arrow in world space.
+  drawTutorialWorld(ctx, game) {
+    const tut = game.tutorial;
+    if (!tut) return;
+    const t = game.time;
+    if (tut.marker && tut.phase === 'run') {
+      const m = tut.marker, pr = 26 + Math.sin(t * 5) * 4;
+      const g = ctx.createRadialGradient(m.x, m.y, 2, m.x, m.y, 60);
+      g.addColorStop(0, 'rgba(255,207,122,0.6)');
+      g.addColorStop(1, 'rgba(255,207,122,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(m.x, m.y, 60, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffcf7a';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(m.x, m.y, pr, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (tut.danger) {
+      const d = tut.danger, k = 1 - d.t / d.max;
+      ctx.fillStyle = `rgba(255,50,35,${0.15 + k * 0.2})`;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,50,35,0.3)';
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r * k, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,80,50,0.95)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    const target = Tutorial.target(game);
+    const h = game.hero;
+    if (!target || h.dead) return;
+    const dx = target.x - h.x, dy = target.y - h.y, dist = Math.hypot(dx, dy);
+    if (dist < 70) return;
+    const a = Math.atan2(dy, dx);
+    const r = 46 + Math.sin(t * 6) * 5;
+    ctx.save();
+    ctx.translate(h.x + Math.cos(a) * r, h.y + Math.sin(a) * r);
+    ctx.rotate(a);
+    ctx.fillStyle = '#ffcf7a';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-6, -9); ctx.lineTo(-2, 0); ctx.lineTo(-6, 9); ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+  },
+
+  // Arrow on the screen edge when the target is off-screen.
+  drawEdgeArrow(ctx, game, view, camX, camY) {
+    const target = game.tutorial && Tutorial.target(game);
+    if (!target) return;
+    const sx = target.x - camX, sy = target.y - camY;
+    const m = 40;
+    if (sx > m && sx < view.w - m && sy > 120 && sy < view.h - m) return;
+    const cx = view.w / 2, cy = view.h / 2;
+    const a = Math.atan2(sy - cy, sx - cx);
+    const ex = Math.max(m, Math.min(view.w - m, sx)), ey = Math.max(130, Math.min(view.h - m, sy));
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(a);
+    ctx.globalAlpha = 0.7 + Math.sin(game.time * 8) * 0.3;
+    ctx.fillStyle = '#ffcf7a';
+    ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -14); ctx.lineTo(-4, 0); ctx.lineTo(-10, 14); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  },
+
+  // Tutorial HUD: Raven's hint box with the step counter, skip and pause buttons.
+  drawTutorialHud(ctx, game, view, input) {
+    const tut = game.tutorial;
+    const play = game.state === 'play';
+
+    // Pause + skip on the right
+    const pb = 46;
+    if (play) this.buttons.pause = { x: view.w - 12 - pb, y: 12, w: pb, h: pb };
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this.roundRect(ctx, view.w - 12 - pb, 12, pb, pb, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,122,0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#ffcf7a';
+    ctx.fillRect(view.w - 12 - pb + 15, 26, 5, 18);
+    ctx.fillRect(view.w - 12 - pb + 26, 26, 5, 18);
+    const sw = 190, sx = view.w - 24 - pb - sw;
+    if (play) this.buttons.skipTutorial = { x: sx, y: 12, w: sw, h: pb };
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this.roundRect(ctx, sx, 12, sw, pb, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,184,152,0.6)';
+    ctx.stroke();
+    this.hudText(ctx, 'Пропустить обучение', sx + sw / 2, 12 + pb / 2 + 1, '#c8b898', 14, 'center');
+    this.drawSkillButton(ctx, game, view, input);
+
+    // Hint box
+    const x0 = 300, x1 = sx - 14;
+    const w = Math.max(320, x1 - x0), x = x1 - w;
+    const text = Tutorial.hint(game);
+    ctx.font = 'bold 15px "Trebuchet MS", Arial, sans-serif';
+    // Measure wrapped height first.
+    const words = text.split(' ');
+    let line = '', lines = 0;
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > w - 92 && line) { lines++; line = word; } else line = test;
+    }
+    if (line) lines++;
+    const hgt = 46 + lines * 19;
+    ctx.fillStyle = 'rgba(14,12,10,0.88)';
+    this.roundRect(ctx, x, 10, w, hgt, 12); ctx.fill();
+    ctx.strokeStyle = '#ffb547';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    this.drawRaven(ctx, x + 38, 10 + hgt / 2, 1.15, game.time);
+    this.hudText(ctx, `ВОРОН · ШАГ ${tut.step + 1}/${TUTORIAL_STEPS}`, x + 76, 26, '#ffb547', 12);
+    this.wrapText(ctx, text, x + 76, 46, w - 92, 19, '#f3e3c0', 15);
+    // Step dots
+    for (let i = 0; i < TUTORIAL_STEPS; i++) {
+      ctx.fillStyle = i < tut.step ? '#ffb547' : i === tut.step ? '#ffffff' : 'rgba(255,255,255,0.18)';
+      ctx.beginPath(); ctx.arc(x + w - 14 - (TUTORIAL_STEPS - 1 - i) * 12, 24, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.textAlign = 'left';
+  },
+
+  // One-time hint toast in normal levels.
+  drawHintToast(ctx, game, view) {
+    const hnt = game.hint;
+    if (!hnt || game.tutorial || game.state === 'menu' || game.state === 'ending') return;
+    const a = Math.min(1, (hnt.max - hnt.t) * 4, hnt.t * 1.5);
+    const w = Math.min(560, view.w - 120), x = (view.w - w) / 2;
+    ctx.font = 'bold 15px "Trebuchet MS", Arial, sans-serif';
+    let line = '', lines = 0;
+    for (const word of hnt.text.split(' ')) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > w - 84 && line) { lines++; line = word; } else line = test;
+    }
+    if (line) lines++;
+    const hgt = 26 + lines * 19;
+    const y = view.h - hgt - 20;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.fillStyle = 'rgba(14,12,10,0.9)';
+    this.roundRect(ctx, x, y, w, hgt, 12); ctx.fill();
+    ctx.strokeStyle = '#ffb547';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    this.drawRaven(ctx, x + 34, y + hgt / 2, 1, game.time);
+    this.wrapText(ctx, hnt.text, x + 68, y + 22, w - 84, 19, '#f3e3c0', 15);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  },
+
   // ---------- Screen space ----------
 
   drawVignette(ctx, view, hero) {
@@ -1957,7 +2150,7 @@ const Render = {
 
     this.hudText(ctx, `● ${h.coins}`, bx, xy + 28, '#ffd23a', 17);
     this.hudText(ctx, `☠ ${game.kills}`, bx + 90, xy + 28, '#d8d0c0', 17);
-    this.hudText(ctx, `Уровень ${game.level} · ${game.district.name}`, bx, xy + 52, game.district.accent, 13);
+    this.hudText(ctx, game.tutorial ? 'Обучение' : `Уровень ${game.level} · ${game.district.name}`, bx, xy + 52, game.district.accent, 13);
 
     // Perks taken (bottom-left)
     let px = bx + 14;
@@ -1973,6 +2166,12 @@ const Render = {
       this.hudText(ctx, perk.icon, px, py + 1, perk.color, 14, 'center');
       if (n > 1) this.hudText(ctx, n, px + 11, py - 11, '#fff', 11, 'center');
       px += 34;
+    }
+
+    if (game.tutorial) {
+      this.drawTutorialHud(ctx, game, view, input);
+      this.drawBanners(ctx, game, view);
+      return;
     }
 
     // ---- Centre: wave, remaining, streak ----
@@ -2048,7 +2247,18 @@ const Render = {
       ctx.fillRect(rx + 8, wy + 25, (pw - 16) * (1 - cd), 3);
     }
 
-    // ---- Banners ----
+    this.drawBanners(ctx, game, view);
+
+    if (game.debug) {
+      const hint = input.touch
+        ? 'debug: тап по оружию — следующее'
+        : 'debug: 1–9, 0 — оружие · M — прицел';
+      this.hudText(ctx, hint, view.w / 2, view.h - 14, 'rgba(243,227,192,0.55)', 12, 'center');
+    }
+    ctx.textAlign = 'left';
+  },
+
+  drawBanners(ctx, game, view) {
     let y = view.h * 0.3;
     for (const b of game.banners) {
       const t = b.life / b.max;
@@ -2059,13 +2269,6 @@ const Render = {
       y += (b.sub ? 30 : 0) + size + 12;
     }
     ctx.globalAlpha = 1;
-
-    if (game.debug) {
-      const hint = input.touch
-        ? 'debug: тап по оружию — следующее'
-        : 'debug: 1–9, 0 — оружие · M — прицел';
-      this.hudText(ctx, hint, view.w / 2, view.h - 14, 'rgba(243,227,192,0.55)', 12, 'center');
-    }
     ctx.textAlign = 'left';
   },
 

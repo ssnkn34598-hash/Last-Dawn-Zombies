@@ -163,6 +163,12 @@ const Game = {
   result: null,
   stateTime: 0,
 
+  // Tutorial run (null in normal levels) and the current Raven hint toast.
+  tutorial: null,
+  hint: null,
+  hintQueue: [],
+  touch: false,
+
   // Bosses
   boss: null,
   bossPending: -1,
@@ -197,6 +203,9 @@ const Game = {
     this.victoryDelay = -1;
     this.result = null;
     this.target = null;
+    this.tutorial = null;
+    this.hint = null;
+    this.hintQueue = [];
     this.boss = null;
     this.bossPending = -1;
     this.darkness = 0;
@@ -229,6 +238,65 @@ const Game = {
     } else {
       this.beginPlay();
     }
+
+    // One-time hints for a weapon used for the first time and for manual aim.
+    if (typeof Hints !== 'undefined') {
+      const w = this.weapon;
+      if (w.id !== 'pistol') Hints.trigger('weapon_' + w.id, `Новое оружие: ${w.name}. ${w.desc}`);
+      if (this.aimMode === 'manual') Hints.manual();
+    }
+  },
+
+  // Separate small arena for the tutorial; the hero cannot die there.
+  startTutorial() {
+    const district = DISTRICTS[0];
+    this.level = 0;
+    this.config = {
+      level: 0, district, arena: { w: 1500, h: 1000 }, barrels: 0, waves: [], total: 0,
+      newEnemy: null, boss: null, mods: { hp: 1, speed: 1, damage: 1 }, stars: [], reward: 0,
+    };
+    this.arena = { w: 1500, h: 1000 };
+    this.district = district;
+    const rng = makeRng(4242);
+    this.obstacles = generateObstacles(this.arena, rng).slice(0, 7);
+    this.barrels = [];
+    this.zombies = [];
+    this.pickups = [];
+    this.banners = [];
+    this.streak = { count: 0, timer: 0, best: 0 };
+    this.kills = 0;
+    this.levelTime = 0;
+    this.hitsTaken = 0;
+    this.perks = {};
+    this.pendingPerks = 0;
+    this.perkChoices = [];
+    this.waveIndex = -1;
+    this.waveQueue = [];
+    this.waveBreak = 0;
+    this.victoryDelay = -1;
+    this.result = null;
+    this.target = null;
+    this.hint = null;
+    this.boss = null;
+    this.bossPending = -1;
+    this.darkness = this.darknessTarget = 0;
+    this.fog = false;
+    this.finalWon = false;
+    Fx.reset();
+    Weapons.reset();
+    Zombies.reset();
+    Bosses.reset();
+    this.hero = this.makeHero();
+    this.turrets = [];
+    this.strikes = [];
+    this.buffs = [];
+    this.camera.x = this.hero.x;
+    this.camera.y = this.hero.y;
+    this.time = 0;
+    Render.buildMap(this);
+    this.tutorial = Tutorial.create();
+    this.setState('play');
+    Tutorial.begin(this, 0);
   },
 
   setState(s) {
@@ -361,6 +429,12 @@ const Game = {
       case 'skill':
         this.useSkill();
         break;
+      case 'skipTutorial':
+        if (this.tutorial && this.state === 'play') {
+          this.setState('paused');
+          this.emit('tutorialSkip');
+        }
+        break;
       case 'skip':
         if (this.state === 'ending') this.stateTime = Math.max(this.stateTime, ENDING_CREDITS_END);
         break;
@@ -467,7 +541,12 @@ const Game = {
     this.updateBarrels(dt);
     this.updatePickups(dt);
     this.updateStreak(dt);
-    this.updateWaves(dt);
+    if (this.tutorial) Tutorial.update(this, dt);
+    else this.updateWaves(dt);
+    if (this.hint) {
+      this.hint.t -= dt;
+      if (this.hint.t <= 0) this.hint = this.hintQueue.shift() || null;
+    }
     Fx.update(dt);
     this.updateBanners(dt);
 
@@ -651,6 +730,7 @@ const Game = {
 
   // Live state of every star goal: ok (met so far) | fail (lost) | pending.
   starGoals() {
+    if (this.tutorial) return [];
     const h = this.hero;
     const done = this.state === 'victory';
     const list = [{ text: 'Победить', state: done ? 'ok' : this.state === 'defeat' ? 'fail' : 'pending', progress: '' }];
@@ -795,7 +875,9 @@ const Game = {
 
   updateSkills(dt) {
     const h = this.hero;
+    const wasCharging = h.skill.t > 0;
     h.skill.t = Math.max(0, h.skill.t - dt);
+    if (wasCharging && h.skill.t === 0 && typeof Hints !== 'undefined') Hints.skill(h.skill);
     h.frenzy = Math.max(0, h.frenzy - dt);
 
     for (let i = this.buffs.length - 1; i >= 0; i--) {
@@ -862,6 +944,9 @@ const Game = {
     this.zombies = [];
     this.pickups = [];
     this.banners = [];
+    this.tutorial = null;
+    this.hint = null;
+    this.hintQueue = [];
     this.boss = null;
     this.bossPending = -1;
     this.darkness = this.darknessTarget = 0;
@@ -938,6 +1023,11 @@ const Game = {
 
   addXp(v) {
     const h = this.hero;
+    if (this.tutorial) {
+      // Level-ups in the tutorial happen only on the perk step.
+      h.xp = Math.min(h.xp + v, xpToLevel(h.lvl) - 1);
+      return;
+    }
     h.xp += v;
     while (h.xp >= xpToLevel(h.lvl)) {
       h.xp -= xpToLevel(h.lvl);
@@ -959,6 +1049,7 @@ const Game = {
     }
     this.perkChoices = choices;
     this.setState('perk');
+    if (typeof Hints !== 'undefined') Hints.trigger('perk');
   },
 
   choosePerk(i) {
@@ -1120,6 +1211,7 @@ const Game = {
     if (STREAK_MILESTONES[s.count]) {
       this.banner(`СЕРИЯ ×${s.count}`, '#ff7a3a', 1.8, STREAK_MILESTONES[s.count]);
       Fx.addShake(4);
+      if (s.count === 10 && typeof Hints !== 'undefined') Hints.trigger('streak');
     }
   },
 
@@ -1185,6 +1277,12 @@ const Game = {
   hurtHero(dmg, src) {
     const h = this.hero;
     if (h.invuln > 0 || h.dead || this.state !== 'play') return;
+    if (this.tutorial) {
+      // Immortal in the tutorial: just a flinch.
+      h.hurt = 0.25;
+      h.invuln = 0.3;
+      return;
+    }
     h.hp -= dmg;
     h.hurt = 0.35;
     h.invuln = 0.2;
@@ -1199,6 +1297,7 @@ const Game = {
       this.collideCircle(h);
     }
     if (h.hp <= 0) this.lose();
+    else if (h.hp < h.maxHp * 0.35 && typeof Hints !== 'undefined') Hints.trigger('lowhp');
   },
 
   // ---------- Pickups ----------
