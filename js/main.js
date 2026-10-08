@@ -100,11 +100,15 @@ window.addEventListener('keydown', e => {
   } else if (e.code === 'KeyM') {
     // Until the aim setting lands in the settings menu.
     Game.toggleAim();
+  } else if (e.code === 'KeyK' && Game.debug) {
+    // Debug: hurt the boss by 30% or clear the current wave.
+    Game.debugSkip();
   } else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
     if (Game.state === 'intro') Game.press('start');
+    else if (Game.state === 'ending') Game.press(Game.stateTime > ENDING_CREDITS_END ? 'endnext' : 'skip');
     else if (Game.state === 'victory') Game.press(Game.level < 100 ? 'next' : 'retry');
     else if (Game.state === 'defeat') Game.press('retry');
-    if (Game.state !== 'play' || e.code === 'Space') e.preventDefault();
+    e.preventDefault();
   } else if (e.code === 'KeyR') {
     Game.press('retry');
   }

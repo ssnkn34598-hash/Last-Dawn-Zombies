@@ -108,6 +108,13 @@ const SAW_RADIUS = 72;
 const SAW_SIZE = 13;
 const WAVE_BREAK = 2.5;
 
+// Ending timeline (seconds since the ending started).
+const ENDING_TITLE_AT = 1;
+const ENDING_LINES_AT = 3.5;
+const ENDING_LINE_STEP = 2.6;
+const ENDING_CREDITS_AT = ENDING_LINES_AT + ENDING.lines.length * ENDING_LINE_STEP + 1.5;
+const ENDING_CREDITS_END = ENDING_CREDITS_AT + 14;
+
 function baseStats() {
   return { damage: 1, rate: 1, speed: 1, magnet: 1, regen: 0, extra: 0, pierce: 0, crit: 0, saws: 0, ice: 0, fire: 0, boom: 0 };
 }
@@ -152,6 +159,14 @@ const Game = {
 
   result: null,
   stateTime: 0,
+
+  // Bosses
+  boss: null,
+  bossPending: -1,
+  darkness: 0,
+  darknessTarget: 0,
+  fog: false,
+  finalWon: false,
   seenEnemies: new Set(),
 
   start(level) {
@@ -179,9 +194,16 @@ const Game = {
     this.victoryDelay = -1;
     this.result = null;
     this.target = null;
+    this.boss = null;
+    this.bossPending = -1;
+    this.darkness = 0;
+    this.darknessTarget = 0;
+    this.fog = false;
+    this.finalWon = false;
     Fx.reset();
     Weapons.reset();
     Zombies.reset();
+    Bosses.reset();
 
     const heroData = HEROES.max;
     const prevWeapon = this.hero ? this.hero.weapon : 0;
@@ -292,10 +314,27 @@ const Game = {
       case 'aim':
         this.toggleAim();
         break;
+      case 'skip':
+        if (this.state === 'ending') this.stateTime = Math.max(this.stateTime, ENDING_CREDITS_END);
+        break;
+      case 'endnext':
+        if (this.state === 'ending' && this.stateTime > ENDING_CREDITS_END) this.win();
+        break;
       case 'weapon':
         if (this.debug) this.setWeapon((this.hero.weapon + 1) % WEAPONS.length);
         break;
     }
+  },
+
+  // Debug (K): hurt the boss by 30%, or clear the current wave.
+  debugSkip() {
+    if (this.state !== 'play') return;
+    if (this.boss && this.boss.state === 'alive') {
+      this.damageZombie(this.boss, this.boss.maxHp * 0.3, { kind: 'explosion' });
+      return;
+    }
+    this.waveQueue = [];
+    for (const z of this.zombies) if (!z.boss) z.state = 'dead';
   },
 
   // ---------- Geometry helpers ----------
@@ -351,6 +390,8 @@ const Game = {
     this.time += dt;
     this.stateTime += dt;
 
+    this.darkness += (this.darknessTarget - this.darkness) * Math.min(1, dt * 1.5);
+
     if (this.state !== 'play') {
       // Overlays freeze the fight; let effects settle behind them.
       if (this.state === 'victory' || this.state === 'defeat') Fx.update(dt);
@@ -368,6 +409,7 @@ const Game = {
 
     Weapons.update(this, dt);
     Zombies.update(this, dt);
+    Bosses.updateHazards(this, dt);
     this.zombies = this.zombies.filter(z => z.state !== 'dead');
     this.updateBarrels(dt);
     this.updatePickups(dt);
@@ -472,10 +514,12 @@ const Game = {
       [queue[k], queue[j]] = [queue[j], queue[k]];
     }
     this.waveQueue = queue;
-    this.waveTimer = 1;
+    this.waveTimer = wave.boss ? 4 : 1;
     const total = this.config.waves.length;
     const last = i === total - 1;
-    this.banner(`ВОЛНА ${i + 1}/${total}`, last ? '#ff5a4a' : '#ffcf7a', 2.2, last ? 'Последняя волна!' : '', true);
+    const sub = wave.boss ? 'Идёт босс!' : last ? 'Последняя волна!' : '';
+    this.banner(`ВОЛНА ${i + 1}/${total}`, last ? '#ff5a4a' : '#ffcf7a', 2.2, sub, true);
+    if (wave.boss) this.bossPending = 2.2;
   },
 
   get wave() {
@@ -483,14 +527,26 @@ const Game = {
   },
 
   get remaining() {
-    return this.waveQueue.length + this.zombies.length;
+    return this.waveQueue.length + this.zombies.length + (this.bossPending >= 0 ? 1 : 0);
   },
 
   updateWaves(dt) {
     if (this.victoryDelay >= 0) {
       this.victoryDelay -= dt;
-      if (this.victoryDelay < 0) this.win();
+      if (this.victoryDelay < 0) {
+        if (this.finalWon) this.setState('ending');
+        else this.win();
+      }
       return;
+    }
+
+    if (this.bossPending >= 0) {
+      this.bossPending -= dt;
+      if (this.bossPending < 0) {
+        const def = BOSSES[this.wave.boss];
+        const p = this.findSpawnPoint(def.radius + 20) || { x: this.arena.w / 2, y: BORDER + 120 };
+        Bosses.spawn(this, this.wave.boss, p.x, p.y);
+      }
     }
 
     if (this.waveBreak > 0) {
@@ -511,10 +567,10 @@ const Game = {
       }
     }
 
-    if (!this.waveQueue.length && !this.zombies.length) {
+    if (!this.waveQueue.length && !this.zombies.length && this.bossPending < 0) {
       if (this.waveIndex >= this.config.waves.length - 1) {
         // Pull all loot in before the victory screen.
-        this.victoryDelay = 1.4;
+        this.victoryDelay = this.finalWon ? 3 : 1.4;
         for (const p of this.pickups) p.magnet = true;
         this.banner('РАЙОН ЗАЧИЩЕН', '#7aff8a', 1.6, '', true);
       } else {
@@ -721,7 +777,7 @@ const Game = {
     // Ice / incendiary perks ride on direct hits.
     if (direct && st.ice) {
       z.slow = 1.5 + st.ice * 0.5;
-      z.slowMul = 1 - Math.min(0.7, 0.3 + st.ice * 0.12);
+      z.slowMul = 1 - Math.min(0.7, 0.3 + st.ice * 0.12) * (z.boss ? 0.4 : 1);
     }
     if (direct && st.fire) {
       const dps = 4 + st.fire * 4;
@@ -758,7 +814,9 @@ const Game = {
 
   killZombie(z, opt = {}) {
     if (z.state === 'dead') return;
+    if (z.boss && Bosses.onLethal(this, z)) return;
     z.state = 'dead';
+    if (z.boss) Bosses.onDeath(this, z);
     const angle = opt.angle !== undefined ? opt.angle : Math.random() * Math.PI * 2;
 
     if (z.def.behavior === 'explode') {

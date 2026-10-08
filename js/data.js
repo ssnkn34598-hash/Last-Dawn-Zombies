@@ -68,6 +68,91 @@ const PERKS = [
   { id: 'boom',      name: 'Детонация',        desc: 'Убитые зомби взрываются (шанс 20%)',     max: 3, icon: '✹', color: '#ff5a3a' },
 ];
 
+// Боссы каждые 10 уровней. mark — внешний вид, attacks — набор приёмов:
+// charge | radial | spiral | spawn | slam | cone | teleport | pools.
+// На 50% здоровья босс впадает в ярость (быстрее, чаще, больше снарядов).
+const BOSSES = {
+  butcher: {
+    name: 'Мясник', level: 10, mark: 'cleaver', hp: 1500, speed: 72, radius: 32, damage: 20,
+    color: '#7f8f5c', cloth: '#5a2a22', attacks: ['charge', 'slam', 'spawn'], minion: 'walker',
+    phrase: 'Свежее мясо само пришло!', ragePhrase: 'Порублю на фарш!',
+  },
+  fireman: {
+    name: 'Брандмейстер', level: 20, mark: 'helmet', hp: 2100, speed: 70, radius: 32, damage: 22,
+    color: '#7a8a60', cloth: '#3a3a42', attacks: ['charge', 'radial', 'spawn'], minion: 'runner',
+    phrase: 'Пожар потушен. Остался ты.', ragePhrase: 'Всё сгорит!',
+  },
+  surgeon: {
+    name: 'Хирург', level: 30, mark: 'mask', hp: 2700, speed: 66, radius: 30, damage: 22,
+    color: '#a0ab8a', cloth: '#3f6f6a', attacks: ['cone', 'pools', 'teleport'], minion: 'crawler',
+    phrase: 'Пациент, ложитесь на стол.', ragePhrase: 'Операция без наркоза!',
+  },
+  horned: {
+    name: 'Рогач', level: 40, mark: 'horns', hp: 3300, speed: 74, radius: 36, damage: 26,
+    color: '#6a5f50', cloth: '#3a2a20', attacks: ['charge', 'slam', 'radial'], minion: 'runner',
+    phrase: 'Это мой район. Мои рога.', ragePhrase: 'Растопчу!',
+  },
+  king: {
+    name: 'Крысиный король', level: 50, mark: 'crown', hp: 3900, speed: 62, radius: 34, damage: 24,
+    color: '#8a9070', cloth: '#5a2a5a', attacks: ['spawn', 'spiral', 'radial'], minion: 'crawler',
+    phrase: 'На колени перед королём!', ragePhrase: 'Слуги, ко мне!',
+  },
+  bride: {
+    name: 'Невеста', level: 60, mark: 'veil', hp: 4500, speed: 80, radius: 28, damage: 24,
+    color: '#b8bca8', cloth: '#d8d4cc', attacks: ['teleport', 'spiral', 'cone'], minion: 'screamer',
+    phrase: 'Он так и не пришёл… Может, ты?', ragePhrase: 'Ты меня бросил!',
+  },
+  signal: {
+    name: 'Связист', level: 70, mark: 'antenna', hp: 5100, speed: 70, radius: 32, damage: 26,
+    color: '#7a8a70', cloth: '#3a4a3a', attacks: ['radial', 'spiral', 'teleport', 'spawn'], minion: 'jumper',
+    phrase: 'Приём… Цель обнаружена.', ragePhrase: 'Всем частям: огонь!',
+  },
+  tank: {
+    name: 'Бронетанк', level: 80, mark: 'armor', hp: 6000, speed: 58, radius: 40, damage: 30,
+    color: '#5f6f55', cloth: '#2e343c', attacks: ['charge', 'slam', 'pools', 'radial'], minion: 'armored',
+    phrase: 'Броня крепка. А ты?', ragePhrase: 'Таран!',
+  },
+  hive: {
+    name: 'Матка', level: 90, mark: 'growths', hp: 6800, speed: 56, radius: 40, damage: 28,
+    color: '#8a9a5a', cloth: '#5a4a3a', attacks: ['pools', 'spawn', 'cone', 'spiral'], minion: 'bloater',
+    phrase: 'Мои дети голодны.', ragePhrase: 'Плодитесь!',
+  },
+  final: {
+    name: 'Нулевой пациент', level: 100, mark: 'final', hp: 4200, speed: 68, radius: 44, damage: 32,
+    color: '#6a7a6a', cloth: '#2a1e2a', minion: 'runner', phases: 3,
+    phaseAttacks: [
+      ['charge', 'radial', 'slam', 'spawn'],
+      ['spiral', 'cone', 'pools', 'charge', 'spawn'],
+      ['charge', 'radial', 'spiral', 'spawn', 'slam', 'cone', 'teleport', 'pools'],
+    ],
+    phrase: 'Я был первым. Я буду последним.',
+    phasePhrases: ['Ты думал, это конец?', 'Рассвета не будет!'],
+    darkness: [0.35, 0.55, 0.7],
+  },
+};
+
+const ENDING = {
+  title: 'Последний рассвет',
+  lines: [
+    'Нулевой пациент пал.',
+    'Без него орда потеряла голос — и разбрелась.',
+    'Утром над Карантином впервые за много месяцев взошло солнце.',
+    'Макс сел на крыше разбитой машины и смотрел, как оно поднимается.',
+    'Город ещё долго будет залечивать раны.',
+    'Но этот рассвет — не последний.',
+  ],
+  credits: [
+    ['Последний рассвет', ''],
+    ['Игра', 'Зомби-стрелялка для Яндекс Игр'],
+    ['Герой', 'Макс'],
+    ['Районы', 'Окраина · Промзона · Центр · Порт · Карантин'],
+    ['Боссы', 'Мясник · Брандмейстер · Хирург · Рогач · Крысиный король'],
+    ['', 'Невеста · Связист · Бронетанк · Матка · Нулевой пациент'],
+    ['Код', 'Claude Code'],
+    ['Спасибо, что играл!', ''],
+  ],
+};
+
 const DROPS = {
   medkitChance: 0.035,
   medkitHeal: 25,
@@ -94,10 +179,13 @@ function levelConfig(n) {
   let seed = n * 2654435761 >>> 0;
   const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
 
+  const boss = Object.keys(BOSSES).find(id => BOSSES[id].level === n) || null;
   const waveCount = n < 4 ? 2 : n < 15 ? 3 : n < 50 ? 4 : 5;
+  // Boss levels: shorter run-up, the last wave is the boss with a few adds.
+  const normalWaves = boss ? (boss === 'final' ? 2 : waveCount - 1) : waveCount;
   const waves = [];
   let total = 0;
-  for (let w = 0; w < waveCount; w++) {
+  for (let w = 0; w < normalWaves; w++) {
     const count = Math.round(7 + n * 0.55 + w * (3 + n * 0.08));
     const zombies = {};
     for (let i = 0; i < count; i++) {
@@ -116,13 +204,21 @@ function levelConfig(n) {
     });
     total += count;
   }
+  let bossTime = 0;
+  if (boss) {
+    const b = BOSSES[boss];
+    const adds = 4 + Math.floor(n / 10);
+    waves.push({ boss, zombies: { [b.minion]: adds }, interval: 2.6, maxAlive: 6 });
+    total += adds + 1;
+    bossTime = (b.hp * (b.phases || 1)) / 55;
+  }
 
   // Two rotating star goals (the first star is always "win").
   const pairs = [['hp', 'time'], ['streak', 'hits'], ['time', 'streak'], ['hits', 'hp']];
   const pair = pairs[(n - 1) % pairs.length];
   const goalValue = {
     hp: Math.min(70, 35 + Math.floor(n / 5) * 2),
-    time: Math.round((total * 1.5 + waveCount * 6 + 25) / 5) * 5,
+    time: Math.round((total * 1.5 + waves.length * 6 + 25 + bossTime) / 5) * 5,
     streak: Math.max(5, Math.min(40, Math.round(total * 0.25))),
     hits: Math.max(4, 12 - Math.floor(n / 15)),
   };
@@ -135,6 +231,7 @@ function levelConfig(n) {
     waves,
     total,
     newEnemy,
+    boss,
     mods: {
       hp: 1 + (n - 1) * 0.035,
       speed: 1 + Math.min(0.25, (n - 1) * 0.003),

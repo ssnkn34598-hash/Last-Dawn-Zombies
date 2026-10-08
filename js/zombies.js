@@ -57,7 +57,11 @@ const Zombies = {
         if (Math.random() < dt * 14) {
           Fx.particle(z.x + (Math.random() - 0.5) * z.r * 2, z.y + (Math.random() - 0.5) * z.r, (Math.random() - 0.5) * 60, -40 - Math.random() * 60, 0.4, 3, '#3b2f22', 'dirt');
         }
-        if (z.riseT >= RISE_TIME) z.state = 'alive';
+        if (z.riseT >= (z.riseDur || RISE_TIME)) z.state = 'alive';
+        continue;
+      }
+      if (z.boss) {
+        if (z.state !== 'dead') Bosses.update(game, z, dt);
         continue;
       }
       if (z.state !== 'alive') continue;
