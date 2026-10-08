@@ -104,6 +104,14 @@ function resolveCircle(x, y, r, o) {
   return { x, y: bottom + r };
 }
 
+const SAW_RADIUS = 72;
+const SAW_SIZE = 13;
+const WAVE_BREAK = 2.5;
+
+function baseStats() {
+  return { damage: 1, rate: 1, speed: 1, magnet: 1, regen: 0, extra: 0, pierce: 0, crit: 0, saws: 0, ice: 0, fire: 0, boom: 0 };
+}
+
 const Game = {
   level: 1,
   config: null,
@@ -115,22 +123,44 @@ const Game = {
   hero: null,
   camera: { x: 0, y: 0 },
   time: 0,
+  // intro (new enemy card) | play | perk | victory | defeat
+  state: 'play',
+  debug: false,
   aimMode: 'auto',        // 'auto' | 'manual'
   target: null,           // current auto-aim target
   aimPoint: null,         // world point of the manual cursor
   streak: { count: 0, timer: 0, best: 0 },
   banners: [],
-  debugSpawn: true,       // temporary: endless mix of every zombie type
-  spawnTimer: 0,
   kills: 0,
 
+  // Waves
+  waveIndex: 0,
+  waveQueue: [],
+  waveTimer: 0,
+  waveBreak: 0,
+  victoryDelay: -1,
+
+  // Level stats for the star goals
+  levelTime: 0,
+  hitsTaken: 0,
+
+  // Perks
+  perks: {},
+  pendingPerks: 0,
+  perkChoices: [],
+  sawAngle: 0,
+
+  result: null,
+  stateTime: 0,
+  seenEnemies: new Set(),
+
   start(level) {
-    this.level = level;
-    this.config = levelConfig(level);
+    this.level = Math.max(1, Math.min(100, level));
+    this.config = levelConfig(this.level);
     this.arena = { w: this.config.arena.w, h: this.config.arena.h };
     this.district = this.config.district;
 
-    const rng = makeRng(level * 7919 + 17);
+    const rng = makeRng(this.level * 7919 + 17);
     this.obstacles = generateObstacles(this.arena, rng);
     this.barrels = this.placeBarrels(this.config.barrels || 4, rng);
     this.zombies = [];
@@ -138,12 +168,23 @@ const Game = {
     this.banners = [];
     this.streak = { count: 0, timer: 0, best: 0 };
     this.kills = 0;
-    this.spawnTimer = 1;
+    this.levelTime = 0;
+    this.hitsTaken = 0;
+    this.perks = {};
+    this.pendingPerks = 0;
+    this.perkChoices = [];
+    this.waveIndex = -1;
+    this.waveQueue = [];
+    this.waveBreak = 0;
+    this.victoryDelay = -1;
+    this.result = null;
+    this.target = null;
     Fx.reset();
     Weapons.reset();
     Zombies.reset();
 
     const heroData = HEROES.max;
+    const prevWeapon = this.hero ? this.hero.weapon : 0;
     this.hero = {
       name: heroData.name,
       x: this.arena.w / 2,
@@ -155,22 +196,46 @@ const Game = {
       maxHp: heroData.hp,
       color: heroData.color,
       magnet: heroData.magnet || 100,
+      stats: baseStats(),
       facing: 0,
       aiming: false,
       moving: false,
       walkTime: 0,
-      weapon: 0,
+      weapon: this.debug ? prevWeapon : 0,
       cooldown: 0,
       recoil: 0,
       hurt: 0,
       invuln: 0,
+      lvl: 1,
       xp: 0,
       coins: 0,
+      dead: false,
     };
 
     this.camera.x = this.hero.x;
     this.camera.y = this.hero.y;
     this.time = 0;
+
+    Render.buildMap(this);
+
+    // The "new enemy" card shows once (kept only for this session until saves exist).
+    const fresh = this.config.newEnemy;
+    if (fresh && !this.seenEnemies.has(fresh)) {
+      this.seenEnemies.add(fresh);
+      this.setState('intro');
+    } else {
+      this.beginPlay();
+    }
+  },
+
+  setState(s) {
+    this.state = s;
+    this.stateTime = 0;
+  },
+
+  beginPlay() {
+    this.setState('play');
+    this.startWave(0);
   },
 
   placeBarrels(count, rng) {
@@ -203,10 +268,34 @@ const Game = {
     this.banner(this.aimMode === 'auto' ? 'Прицел: АВТО' : 'Прицел: РУЧНОЙ', '#8fd8ff', 1);
   },
 
-  banner(text, color, life = 1.6, sub = '') {
+  banner(text, color, life = 1.6, sub = '', big = false) {
     this.banners = this.banners.filter(b => b.text !== text);
-    this.banners.push({ text, sub, color, life, max: life });
+    this.banners.push({ text, sub, color, life, max: life, big });
     if (this.banners.length > 3) this.banners.shift();
+  },
+
+  // Buttons on overlays and HUD (from mouse, touch or keyboard).
+  press(name) {
+    switch (name) {
+      case 'start':
+        if (this.state === 'intro') this.beginPlay();
+        break;
+      case 'perk0': case 'perk1': case 'perk2':
+        if (this.state === 'perk') this.choosePerk(Number(name.slice(4)));
+        break;
+      case 'next':
+        if (this.state === 'victory' && this.stateTime > 0.6) this.start(Math.min(100, this.level + 1));
+        break;
+      case 'retry':
+        if ((this.state === 'victory' || this.state === 'defeat') && this.stateTime > 0.6) this.start(this.level);
+        break;
+      case 'aim':
+        this.toggleAim();
+        break;
+      case 'weapon':
+        if (this.debug) this.setWeapon((this.hero.weapon + 1) % WEAPONS.length);
+        break;
+    }
   },
 
   // ---------- Geometry helpers ----------
@@ -260,10 +349,22 @@ const Game = {
   //             stick: {x,y}|null (aim stick, 0..1), firing: bool }
   update(dt, controls, view) {
     this.time += dt;
+    this.stateTime += dt;
+
+    if (this.state !== 'play') {
+      // Overlays freeze the fight; let effects settle behind them.
+      if (this.state === 'victory' || this.state === 'defeat') Fx.update(dt);
+      this.updateBanners(dt);
+      this.updateCamera(dt, view);
+      return;
+    }
+
     const h = this.hero;
+    this.levelTime += dt;
 
     this.updateHero(dt, controls.move);
     this.updateAim(dt, controls, view);
+    this.updateSaws(dt);
 
     Weapons.update(this, dt);
     Zombies.update(this, dt);
@@ -271,19 +372,25 @@ const Game = {
     this.updateBarrels(dt);
     this.updatePickups(dt);
     this.updateStreak(dt);
-    if (this.debugSpawn) this.updateDebugSpawn(dt);
+    this.updateWaves(dt);
     Fx.update(dt);
-
-    for (let i = this.banners.length - 1; i >= 0; i--) {
-      this.banners[i].life -= dt;
-      if (this.banners[i].life <= 0) this.banners.splice(i, 1);
-    }
+    this.updateBanners(dt);
 
     h.hurt = Math.max(0, h.hurt - dt);
     h.invuln = Math.max(0, h.invuln - dt);
     h.recoil = Math.max(0, h.recoil - dt * 8);
+    if (h.stats.regen > 0 && h.hp < h.maxHp) h.hp = Math.min(h.maxHp, h.hp + h.stats.regen * dt);
+
+    if (this.state === 'play' && this.pendingPerks > 0) this.openPerks();
 
     this.updateCamera(dt, view);
+  },
+
+  updateBanners(dt) {
+    for (let i = this.banners.length - 1; i >= 0; i--) {
+      this.banners[i].life -= dt;
+      if (this.banners[i].life <= 0) this.banners.splice(i, 1);
+    }
   },
 
   updateHero(dt, move) {
@@ -292,9 +399,10 @@ const Game = {
     h.moving = len > 0.05;
     const px = h.x, py = h.y;
     if (h.moving) {
-      h.x += move.x * h.speed * dt;
-      h.y += move.y * h.speed * dt;
-      h.walkTime += dt * (0.5 + len);
+      const sp = h.speed * h.stats.speed;
+      h.x += move.x * sp * dt;
+      h.y += move.y * sp * dt;
+      h.walkTime += dt * (0.5 + len) * h.stats.speed;
     }
     this.collideCircle(h);
     h.vx = (h.x - px) / dt;
@@ -343,7 +451,7 @@ const Game = {
       let shots = 0;
       while (h.cooldown <= 0 && shots < 4) {
         Weapons.fire(this, w, angle, target, aimPoint);
-        h.cooldown += 1 / w.rate;
+        h.cooldown += 1 / (w.rate * h.stats.rate);
         h.recoil = 1;
         shots++;
       }
@@ -352,18 +460,256 @@ const Game = {
     }
   },
 
+  // ---------- Waves ----------
+
+  startWave(i) {
+    const wave = this.config.waves[i];
+    this.waveIndex = i;
+    const queue = [];
+    for (const [type, n] of Object.entries(wave.zombies)) for (let k = 0; k < n; k++) queue.push(type);
+    for (let k = queue.length - 1; k > 0; k--) {
+      const j = Math.floor(Math.random() * (k + 1));
+      [queue[k], queue[j]] = [queue[j], queue[k]];
+    }
+    this.waveQueue = queue;
+    this.waveTimer = 1;
+    const total = this.config.waves.length;
+    const last = i === total - 1;
+    this.banner(`ВОЛНА ${i + 1}/${total}`, last ? '#ff5a4a' : '#ffcf7a', 2.2, last ? 'Последняя волна!' : '', true);
+  },
+
+  get wave() {
+    return this.config.waves[this.waveIndex];
+  },
+
+  get remaining() {
+    return this.waveQueue.length + this.zombies.length;
+  },
+
+  updateWaves(dt) {
+    if (this.victoryDelay >= 0) {
+      this.victoryDelay -= dt;
+      if (this.victoryDelay < 0) this.win();
+      return;
+    }
+
+    if (this.waveBreak > 0) {
+      this.waveBreak -= dt;
+      if (this.waveBreak <= 0) this.startWave(this.waveIndex + 1);
+      return;
+    }
+
+    const wave = this.wave;
+    this.waveTimer -= dt;
+    if (this.waveQueue.length && this.waveTimer <= 0 && this.zombies.length < wave.maxAlive) {
+      const type = this.waveQueue[this.waveQueue.length - 1];
+      const p = this.findSpawnPoint(ZOMBIES[type].radius);
+      if (p) {
+        this.waveQueue.pop();
+        Zombies.spawn(this, type, p.x, p.y);
+        this.waveTimer = wave.interval * (0.7 + Math.random() * 0.6);
+      }
+    }
+
+    if (!this.waveQueue.length && !this.zombies.length) {
+      if (this.waveIndex >= this.config.waves.length - 1) {
+        // Pull all loot in before the victory screen.
+        this.victoryDelay = 1.4;
+        for (const p of this.pickups) p.magnet = true;
+        this.banner('РАЙОН ЗАЧИЩЕН', '#7aff8a', 1.6, '', true);
+      } else {
+        this.waveBreak = WAVE_BREAK;
+        this.banner('Волна отбита', '#a8e08a', 1.4, 'передышка');
+      }
+    }
+  },
+
+  findSpawnPoint(r) {
+    const h = this.hero, a = this.arena;
+    for (let i = 0; i < 25; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const d = 260 + Math.random() * 340;
+      const x = h.x + Math.cos(ang) * d, y = h.y + Math.sin(ang) * d;
+      if (x < BORDER + r + 10 || y < BORDER + r + 10 || x > a.w - BORDER - r - 10 || y > a.h - BORDER - r - 10) continue;
+      const blocked = this.obstacles.some(o => { const [hw, hh] = halfSize(o); return Math.abs(o.x - x) < hw + r + 6 && Math.abs(o.y - y) < hh + r + 6; })
+        || this.barrels.some(b => !b.dead && Math.hypot(b.x - x, b.y - y) < b.r + r + 10);
+      if (!blocked) return { x, y };
+    }
+    return null;
+  },
+
+  // ---------- Stars ----------
+
+  // Live state of every star goal: ok (met so far) | fail (lost) | pending.
+  starGoals() {
+    const h = this.hero;
+    const done = this.state === 'victory';
+    const list = [{ text: 'Победить', state: done ? 'ok' : this.state === 'defeat' ? 'fail' : 'pending', progress: '' }];
+    for (const g of this.config.stars) {
+      const v = g.value;
+      let state, progress;
+      switch (g.type) {
+        case 'hp': {
+          const pct = Math.max(0, Math.round(h.hp / h.maxHp * 100));
+          state = pct >= v ? 'ok' : done ? 'fail' : 'pending';
+          progress = pct + '%';
+          break;
+        }
+        case 'time': {
+          const t = Math.floor(this.levelTime);
+          state = t <= v ? 'ok' : 'fail';
+          progress = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+          break;
+        }
+        case 'streak':
+          state = this.streak.best >= v ? 'ok' : done ? 'fail' : 'pending';
+          progress = `${Math.min(this.streak.best, v)}/${v}`;
+          break;
+        case 'hits':
+          state = this.hitsTaken <= v ? 'ok' : 'fail';
+          progress = `${this.hitsTaken}/${v}`;
+          break;
+      }
+      if (this.state === 'defeat') state = 'fail';
+      list.push({ text: STAR_GOALS[g.type].text(v), state, progress });
+    }
+    return list;
+  },
+
+  win() {
+    // starGoals() counts the level as won only once state is victory.
+    this.setState('victory');
+    const final = this.starGoals();
+    const stars = final.filter(g => g.state === 'ok').length;
+    const bonus = this.config.reward + stars * 10;
+    this.result = {
+      goals: final,
+      stars,
+      coins: this.hero.coins,
+      bonus,
+      kills: this.kills,
+      time: this.levelTime,
+      best: this.streak.best,
+    };
+  },
+
+  lose() {
+    const h = this.hero;
+    h.dead = true;
+    h.hp = 0;
+    Fx.blood(h.x, h.y, 0, 30);
+    Render.splat(h.x, h.y, 24, '#6e0f0f', 0.8);
+    this.setState('defeat');
+    this.result = {
+      goals: this.starGoals(),
+      stars: 0,
+      coins: Math.floor(h.coins / 2),
+      kills: this.kills,
+      wave: this.waveIndex + 1,
+      waves: this.config.waves.length,
+    };
+  },
+
+  // ---------- Perks ----------
+
+  addXp(v) {
+    const h = this.hero;
+    h.xp += v;
+    while (h.xp >= xpToLevel(h.lvl)) {
+      h.xp -= xpToLevel(h.lvl);
+      h.lvl++;
+      this.pendingPerks++;
+      Fx.ring(h.x, h.y, 70, '#5ad8ff', 0.5, 5);
+    }
+  },
+
+  openPerks() {
+    const pool = PERKS.filter(p => (this.perks[p.id] || 0) < p.max);
+    if (!pool.length) {
+      this.pendingPerks = 0;
+      return;
+    }
+    const choices = [];
+    while (choices.length < 3 && pool.length) {
+      choices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    this.perkChoices = choices;
+    this.setState('perk');
+  },
+
+  choosePerk(i) {
+    const perk = this.perkChoices[i];
+    if (!perk || this.stateTime < 0.25) return;
+    this.applyPerk(perk.id);
+    this.pendingPerks--;
+    this.perkChoices = [];
+    this.setState('play');
+    this.hero.invuln = Math.max(this.hero.invuln, 0.6);
+    this.banner(perk.name, perk.color, 1.4);
+  },
+
+  applyPerk(id) {
+    const h = this.hero, s = h.stats;
+    this.perks[id] = (this.perks[id] || 0) + 1;
+    switch (id) {
+      case 'damage':    s.damage += 0.2; break;
+      case 'firerate':  s.rate += 0.15; break;
+      case 'speed':     s.speed += 0.12; break;
+      case 'maxhp':     h.maxHp += 25; h.hp = Math.min(h.maxHp, h.hp + 50); break;
+      case 'magnet':    s.magnet += 0.6; break;
+      case 'regen':     s.regen += 1.5; break;
+      case 'multishot': s.extra += 1; break;
+      case 'pierce':    s.pierce += 1; break;
+      case 'crit':      s.crit += 0.1; break;
+      case 'saw':       s.saws += 1; break;
+      case 'ice':       s.ice += 1; break;
+      case 'fire':      s.fire += 1; break;
+      case 'boom':      s.boom += 1; break;
+    }
+  },
+
+  sawPositions() {
+    const n = this.hero.stats.saws, out = [];
+    for (let i = 0; i < n; i++) {
+      const a = this.sawAngle + i * Math.PI * 2 / n;
+      out.push({ x: this.hero.x + Math.cos(a) * SAW_RADIUS, y: this.hero.y + Math.sin(a) * SAW_RADIUS, a });
+    }
+    return out;
+  },
+
+  updateSaws(dt) {
+    const s = this.hero.stats;
+    if (!s.saws) return;
+    this.sawAngle += dt * 4.2;
+    for (const p of this.sawPositions()) {
+      for (const z of this.zombies) {
+        if (z.state !== 'alive' || (z.sawCd && z.sawCd > this.time)) continue;
+        if (Math.hypot(z.x - p.x, z.y - p.y) > z.r + SAW_SIZE) continue;
+        z.sawCd = this.time + 0.3;
+        const ang = Math.atan2(z.y - this.hero.y, z.x - this.hero.x);
+        this.damageZombie(z, 14 * s.damage, { angle: ang, knock: 120, kind: 'saw' });
+        Fx.burst(p.x, p.y, 3, { angle: p.a + Math.PI / 2, cone: 0.8, speed: 220, life: 0.15, size: 2, color: '#ffe08a', kind: 'spark' });
+      }
+      for (const b of this.barrels) {
+        if (!b.dead && Math.hypot(b.x - p.x, b.y - p.y) < b.r + SAW_SIZE) this.damageBarrel(b, 10);
+      }
+    }
+  },
+
   // ---------- Damage ----------
 
   damageZombie(z, amount, opt = {}) {
     if (z.state !== 'alive') return;
     const kind = opt.kind || 'bullet';
+    const st = this.hero.stats;
+    const direct = kind === 'bullet' || kind === 'bolt' || kind === 'plasma' || kind === 'tesla';
     let dmg = amount;
     let armored = false;
     if (z.def.armor && kind !== 'explosion' && kind !== 'burn' && kind !== 'tesla') {
       dmg *= 1 - z.def.armor;
       armored = true;
     }
-    const crit = (kind === 'bullet' || kind === 'bolt' || kind === 'plasma') && Math.random() < 0.08;
+    const crit = (kind === 'bullet' || kind === 'bolt' || kind === 'plasma' || kind === 'saw') && Math.random() < 0.08 + st.crit;
     if (crit) dmg *= 2;
     dmg = Math.max(1, Math.round(dmg));
 
@@ -371,6 +717,17 @@ const Game = {
     z.flash = 0.1;
 
     if (opt.burn) z.burn = { dps: opt.burn.dps, t: opt.burn.time, acc: z.burn ? z.burn.acc : 0 };
+
+    // Ice / incendiary perks ride on direct hits.
+    if (direct && st.ice) {
+      z.slow = 1.5 + st.ice * 0.5;
+      z.slowMul = 1 - Math.min(0.7, 0.3 + st.ice * 0.12);
+    }
+    if (direct && st.fire) {
+      const dps = 4 + st.fire * 4;
+      if (!z.burn || z.burn.dps < dps) z.burn = { dps, t: 2.5, acc: z.burn ? z.burn.acc : 0 };
+      else z.burn.t = Math.max(z.burn.t, 2.5);
+    }
 
     if (opt.knock && opt.angle !== undefined) {
       z.kx += Math.cos(opt.angle) * opt.knock / z.mass;
@@ -407,7 +764,8 @@ const Game = {
     if (z.def.behavior === 'explode') {
       Fx.burst(z.x, z.y, 24, { speed: 320, life: 0.6, size: 5, color: ['#9bb34a', '#7a8a3a', '#5a1a14'], kind: 'acid', drag: 4 });
       Render.splat(z.x, z.y, z.def.blastRadius * 0.4, '#4a5a1f', 0.4);
-      this.explode(z.x, z.y, z.def.blastRadius, z.def.blastDamage * 2, 'zombie', z.def.blastDamage);
+      const heroDmg = Math.round(z.def.blastDamage * z.dmgMul);
+      this.explode(z.x, z.y, z.def.blastRadius, heroDmg * 2, 'zombie', heroDmg);
     } else {
       Fx.blood(z.x, z.y, angle, 14);
       Fx.burst(z.x, z.y, 6, { angle, cone: 2, speed: 220, life: 0.5, size: 5, color: ['#5c0b0b', z.def.color], kind: 'gore', drag: 5 });
@@ -418,6 +776,16 @@ const Game = {
 
     this.kills++;
     this.drop(z);
+
+    const boom = this.hero.stats.boom;
+    if (boom && opt.kind !== 'perk-boom' && Math.random() < 0.2 * boom) {
+      Fx.explosion(z.x, z.y, 70);
+      for (const o of this.zombies) {
+        if (o.state === 'alive' && Math.hypot(o.x - z.x, o.y - z.y) < 70 + o.r) {
+          this.damageZombie(o, 25 * this.hero.stats.damage, { angle: Math.atan2(o.y - z.y, o.x - z.x), knock: 200, kind: 'perk-boom' });
+        }
+      }
+    }
 
     const s = this.streak;
     s.count++;
@@ -490,10 +858,11 @@ const Game = {
 
   hurtHero(dmg, src) {
     const h = this.hero;
-    if (h.invuln > 0) return;
+    if (h.invuln > 0 || h.dead || this.state !== 'play') return;
     h.hp -= dmg;
     h.hurt = 0.35;
     h.invuln = 0.2;
+    this.hitsTaken++;
     Fx.text(h.x, h.y - 26, '-' + dmg, '#ff4a4a', 18);
     Fx.blood(h.x, h.y, src ? Math.atan2(h.y - src.y, h.x - src.x) : 0, 6);
     Fx.addShake(5);
@@ -503,29 +872,14 @@ const Game = {
       h.y += Math.sin(a) * 10;
       this.collideCircle(h);
     }
-    if (h.hp <= 0) {
-      // Temporary until defeat screen (step 3): revive with a shockwave.
-      h.hp = h.maxHp;
-      h.invuln = 2;
-      this.banner('ВТОРОЕ ДЫХАНИЕ', '#ff5a4a', 2, 'поражение появится на шаге 3');
-      Fx.ring(h.x, h.y, 220, '#ff7a5a', 0.5, 8);
-      for (const z of this.zombies) {
-        if (z.state !== 'alive') continue;
-        const d = Math.hypot(z.x - h.x, z.y - h.y);
-        if (d < 220) {
-          const a = Math.atan2(z.y - h.y, z.x - h.x);
-          z.kx += Math.cos(a) * 600 / z.mass;
-          z.ky += Math.sin(a) * 600 / z.mass;
-        }
-      }
-      this.streak.count = 0;
-    }
+    if (h.hp <= 0) this.lose();
   },
 
   // ---------- Pickups ----------
 
   updatePickups(dt) {
     const h = this.hero;
+    const magnet = h.magnet * h.stats.magnet;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i];
       p.life -= dt;
@@ -534,9 +888,10 @@ const Game = {
       const d = Math.hypot(dx, dy) || 1;
       const wanted = p.kind !== 'medkit' || h.hp < h.maxHp;
 
-      if (wanted && d < h.magnet) p.magnet = true;
+      if (wanted && d < magnet) p.magnet = true;
       if (p.magnet && wanted) {
-        const sp = Math.min(800, 200 + (h.magnet - Math.min(d, h.magnet)) * 6 + (p.pull = (p.pull || 0) + dt * 600));
+        p.pull = (p.pull || 0) + dt * 600;
+        const sp = Math.min(900, 200 + (magnet - Math.min(d, magnet)) * 6 + p.pull);
         p.vx = dx / d * sp;
         p.vy = dy / d * sp;
       } else {
@@ -553,20 +908,20 @@ const Game = {
 
       if (wanted && d < h.r + 8) {
         if (p.kind === 'xp') {
-          h.xp += p.value;
+          this.addXp(p.value);
         } else if (p.kind === 'coin') {
           h.coins += p.value;
           Fx.text(h.x, h.y - 30, '+' + p.value, '#ffd23a', 13);
         } else if (p.kind === 'medkit') {
           const heal = Math.min(p.value, h.maxHp - h.hp);
           h.hp += heal;
-          Fx.text(h.x, h.y - 30, '+' + heal, '#5aff7a', 18);
+          Fx.text(h.x, h.y - 30, '+' + Math.round(heal), '#5aff7a', 18);
           Fx.ring(h.x, h.y, 40, '#5aff7a', 0.3, 3);
         }
         this.pickups.splice(i, 1);
         continue;
       }
-      if (p.life <= 0) this.pickups.splice(i, 1);
+      if (p.life <= 0 && !p.magnet) this.pickups.splice(i, 1);
     }
   },
 
@@ -576,35 +931,6 @@ const Game = {
       s.timer -= dt;
       if (s.timer <= 0) s.count = 0;
     }
-  },
-
-  // ---------- Temporary test spawner ----------
-
-  updateDebugSpawn(dt) {
-    this.spawnTimer -= dt;
-    if (this.spawnTimer > 0) return;
-    this.spawnTimer = 0.45;
-    if (this.zombies.length >= 30) return;
-
-    const types = Object.keys(ZOMBIES);
-    // Walkers are the most common, the rest share evenly.
-    const type = Math.random() < 0.3 ? types[0] : types[1 + Math.floor(Math.random() * (types.length - 1))];
-    const p = this.findSpawnPoint(ZOMBIES[type].radius);
-    if (p) Zombies.spawn(this, type, p.x, p.y);
-  },
-
-  findSpawnPoint(r) {
-    const h = this.hero, a = this.arena;
-    for (let i = 0; i < 25; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const d = 260 + Math.random() * 320;
-      const x = h.x + Math.cos(ang) * d, y = h.y + Math.sin(ang) * d;
-      if (x < BORDER + r + 10 || y < BORDER + r + 10 || x > a.w - BORDER - r - 10 || y > a.h - BORDER - r - 10) continue;
-      const blocked = this.obstacles.some(o => { const [hw, hh] = halfSize(o); return Math.abs(o.x - x) < hw + r + 6 && Math.abs(o.y - y) < hh + r + 6; })
-        || this.barrels.some(b => !b.dead && Math.hypot(b.x - x, b.y - y) < b.r + r + 10);
-      if (!blocked) return { x, y };
-    }
-    return null;
   },
 
   // ---------- Camera ----------

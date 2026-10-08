@@ -13,14 +13,32 @@ const Weapons = {
     return { x: hero.x + c * 28 - s * 5, y: hero.y + s * 28 + c * 5 };
   },
 
-  // target: zombie (auto aim) or null; aimPoint: world point for grenades
+  // target: zombie (auto aim) or null; aimPoint: world point for grenades.
+  // The multishot perk fires extra copies fanned around the aim angle.
   fire(game, w, angle, target, aimPoint) {
+    const extra = game.hero.stats.extra;
+    const fans = extra > 0 && !w.pellets && w.type !== 'flame' && w.type !== 'tesla';
+    if (!fans) return this.fireOne(game, w, angle, target, aimPoint);
     const h = game.hero;
+    for (let i = 0; i <= extra; i++) {
+      const off = (i - extra / 2) * 0.14;
+      let pt = aimPoint;
+      if (aimPoint) {
+        const d = Math.hypot(aimPoint.x - h.x, aimPoint.y - h.y);
+        pt = { x: h.x + Math.cos(angle + off) * d, y: h.y + Math.sin(angle + off) * d };
+      }
+      this.fireOne(game, w, angle + off, off === 0 ? target : null, pt);
+    }
+  },
+
+  fireOne(game, w, angle, target, aimPoint) {
+    const h = game.hero;
+    const st = h.stats;
     const m = this.muzzle(h, angle);
 
     switch (w.type) {
       case 'bullet': {
-        const n = w.pellets || 1;
+        const n = w.pellets ? w.pellets + st.extra * 2 : 1;
         for (let i = 0; i < n; i++) {
           const a = angle + (n > 1 ? (i / (n - 1) - 0.5) * w.spread : 0) + (Math.random() - 0.5) * w.spread * (n > 1 ? 0.3 : 1);
           const sp = w.speed * (n > 1 ? 0.85 + Math.random() * 0.3 : 1);
@@ -50,7 +68,7 @@ const Weapons = {
         }
         this.projectiles.push({
           w, type: 'grenade', x: m.x, y: m.y, sx: m.x, sy: m.y, tx, ty,
-          t: 0, dur: 0.35 + Math.min(d, w.range) / 900, z: 0, spin: 0,
+          t: 0, dur: 0.35 + Math.min(d, w.range) / 900, z: 0, spin: 0, damage: w.damage * st.damage,
         });
         Fx.flash(m.x, m.y, 16, 'rgba(200,255,160,1)', 0.06);
         break;
@@ -80,9 +98,9 @@ const Weapons = {
       vy: Math.sin(angle) * speed,
       angle,
       life: w.range / speed,
-      damage: w.damage,
+      damage: w.damage * Game.hero.stats.damage,
       radius: opt.radius,
-      pierce: opt.pierce,
+      pierce: opt.pierce + (w.type === 'flame' || w.type === 'rocket' ? 0 : Game.hero.stats.pierce),
       grow: opt.grow || 0,
       hit: new Set(),
     };
@@ -113,8 +131,9 @@ const Weapons = {
     }
 
     const hit = new Set();
-    let from = m, cur = first, dmg = w.damage;
-    for (let i = 0; i <= (w.chains || 0) && cur; i++) {
+    const st = game.hero.stats;
+    let from = m, cur = first, dmg = w.damage * st.damage;
+    for (let i = 0; i <= (w.chains || 0) + st.extra * 2 && cur; i++) {
       hit.add(cur);
       Fx.arc(this.jagged(from, cur), w.color);
       Fx.burst(cur.x, cur.y, 4, { speed: 180, life: 0.2, size: 2, color: ['#bff0ff', '#8fd8ff'], kind: 'spark' });
@@ -167,7 +186,7 @@ const Weapons = {
     p.z = Math.sin(Math.PI * k) * (30 + p.dur * 60);
     p.spin += dt * 14;
     if (k >= 1) {
-      game.explode(p.x, p.y, p.w.radius, p.w.damage, 'player');
+      game.explode(p.x, p.y, p.w.radius, p.damage, 'player');
       return false;
     }
     return true;

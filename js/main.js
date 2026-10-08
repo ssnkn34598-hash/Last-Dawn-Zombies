@@ -9,6 +9,11 @@ const view = { w: 960, h: LOGICAL_H, scale: 1 };
 
 const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+// ?debug enables test keys; ?debug&level=N starts at level N.
+const params = new URLSearchParams(location.search);
+Game.debug = params.has('debug');
+const startLevel = Game.debug && params.get('level') ? Number(params.get('level')) || 1 : 1;
+
 function resize() {
   const cssW = window.innerWidth;
   const cssH = window.innerHeight;
@@ -82,13 +87,26 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     return;
   }
-  // Temporary test keys: 1–9, 0 — weapons; M — aim mode.
-  const digit = /^Digit(\d)$/.exec(e.code);
+  if (e.repeat) return;
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
   if (digit) {
     const n = Number(digit[1]);
-    Game.setWeapon(n === 0 ? 9 : n - 1);
-  } else if (e.code === 'KeyM' && !e.repeat) {
+    if (Game.state === 'perk') {
+      if (n >= 1 && n <= 3) Game.press('perk' + (n - 1));
+    } else if (Game.debug) {
+      // Debug only: 1–9, 0 — weapons.
+      Game.setWeapon(n === 0 ? 9 : n - 1);
+    }
+  } else if (e.code === 'KeyM') {
+    // Until the aim setting lands in the settings menu.
     Game.toggleAim();
+  } else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+    if (Game.state === 'intro') Game.press('start');
+    else if (Game.state === 'victory') Game.press(Game.level < 100 ? 'next' : 'retry');
+    else if (Game.state === 'defeat') Game.press('retry');
+    if (Game.state !== 'play' || e.code === 'Space') e.preventDefault();
+  } else if (e.code === 'KeyR') {
+    Game.press('retry');
   }
 });
 window.addEventListener('keyup', e => input.keys.delete(e.code));
@@ -112,7 +130,10 @@ function toLogical(t) {
 canvas.addEventListener('mousemove', e => { input.pointer = toLogical(e); });
 canvas.addEventListener('mousedown', e => {
   input.pointer = toLogical(e);
-  if (e.button === 0) input.mouseDown = true;
+  if (e.button !== 0) return;
+  const btn = hitButton(input.pointer);
+  if (btn) { Game.press(btn); return; }
+  if (Game.state === 'play') input.mouseDown = true;
 });
 window.addEventListener('mouseup', e => { if (e.button === 0) input.mouseDown = false; });
 canvas.addEventListener('mouseleave', () => { input.pointer = null; });
@@ -138,8 +159,8 @@ canvas.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
     const p = toLogical(t);
     const btn = hitButton(p);
-    if (btn === 'weapon') { Game.setWeapon((Game.hero.weapon + 1) % WEAPONS.length); continue; }
-    if (btn === 'aim') { Game.toggleAim(); continue; }
+    if (btn) { Game.press(btn); continue; }
+    if (Game.state !== 'play') continue;
 
     if (p.x < view.w / 2) {
       if (!input.joystick.active) startStick(input.joystick, t, p);
@@ -208,8 +229,7 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
-Game.start(1);
-Render.buildMap(Game);
+Game.start(startLevel);
 Game.clampCamera(view);
 canvas.style.cursor = 'crosshair';
 requestAnimationFrame(t => { last = t; frame(t); });

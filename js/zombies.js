@@ -12,11 +12,18 @@ const Zombies = {
 
   spawn(game, type, x, y) {
     const def = ZOMBIES[type];
+    const mods = (game.config && game.config.mods) || { hp: 1, speed: 1, damage: 1 };
+    const hp = Math.round(def.hp * mods.hp);
     const z = {
       type, def, x, y,
       r: def.radius,
-      hp: def.hp,
-      maxHp: def.hp,
+      hp,
+      maxHp: hp,
+      speed: def.speed * mods.speed,
+      damage: Math.round(def.damage * mods.damage),
+      dmgMul: mods.damage,
+      slow: 0,
+      slowMul: 1,
       mass: def.mass || 1,
       state: 'rising',
       riseT: 0,
@@ -58,6 +65,7 @@ const Zombies = {
       z.flash = Math.max(0, z.flash - dt);
       z.attackCd = Math.max(0, z.attackCd - dt);
       z.haste = Math.max(0, z.haste - dt);
+      z.slow = Math.max(0, z.slow - dt);
       z.timer -= dt;
       if (z.spitAnim > 0) z.spitAnim -= dt;
 
@@ -78,7 +86,7 @@ const Zombies = {
       const dx = h.x - z.x, dy = h.y - z.y;
       const dist = Math.hypot(dx, dy) || 1;
       let dirX = dx / dist, dirY = dy / dist;
-      let speed = z.def.speed * (z.haste > 0 ? 1.6 : 1);
+      let speed = z.speed * (z.haste > 0 ? 1.6 : 1) * (z.slow > 0 ? z.slowMul : 1);
 
       switch (z.def.behavior) {
         case 'lunge':
@@ -201,7 +209,7 @@ const Zombies = {
           if (z.fuse < 0) z.fuse = 0.6;
         } else if (z.attackCd <= 0) {
           z.attackCd = 1;
-          game.hurtHero(z.def.damage, z);
+          game.hurtHero(z.damage, z);
         }
       }
     }
@@ -238,7 +246,7 @@ const Zombies = {
     const tx = h.x + (h.vx || 0) * lead, ty = h.y + (h.vy || 0) * lead;
     const a = Math.atan2(ty - z.y, tx - z.x);
     const sp = 300;
-    this.spits.push({ x: z.x + Math.cos(a) * z.r, y: z.y + Math.sin(a) * z.r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.6, damage: z.def.spitDamage });
+    this.spits.push({ x: z.x + Math.cos(a) * z.r, y: z.y + Math.sin(a) * z.r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.6, damage: Math.round(z.def.spitDamage * z.dmgMul) });
     z.spitAnim = 0.25;
     Fx.burst(z.x, z.y, 4, { angle: a, cone: 0.6, speed: 120, life: 0.25, size: 3, color: '#9bd34a', kind: 'acid' });
   },
