@@ -204,6 +204,7 @@ const UI = {
   init() {
     Progress.load();
     I18N.setLang(I18N.detect(Progress.data.settings.lang));
+    Sfx.setEnabled(Progress.data.settings.sound);
     Daily.check();
     setInterval(() => this.tick(), 1000);
     Game.aimMode = Progress.data.settings.aim;
@@ -738,6 +739,7 @@ const UI = {
   // ---------- Clicks ----------
 
   onClick(e) {
+    if (e.target.closest('button')) sfx('click');
     const tabBtn = e.target.closest('[data-tab]');
     if (tabBtn && this.menu.contains(tabBtn)) {
       this.tab = tabBtn.dataset.tab;
@@ -754,6 +756,7 @@ const UI = {
         break;
       case 'sound':
         d.settings.sound = !d.settings.sound;
+        Sfx.setEnabled(d.settings.sound);
         Progress.save();
         this.render();
         break;
@@ -927,7 +930,7 @@ const UI = {
     Object.assign(m.actions, {
       'aim-auto': () => this.setAim('auto', re),
       'aim-manual': () => this.setAim('manual', re),
-      'toggle-sound': () => { Progress.data.settings.sound = !Progress.data.settings.sound; Progress.save(); re(); this.render(); },
+      'toggle-sound': () => { Progress.data.settings.sound = !Progress.data.settings.sound; Sfx.setEnabled(Progress.data.settings.sound); Progress.save(); re(); this.render(); },
       'lang-ru': () => this.setLang('ru', re),
       'lang-en': () => this.setLang('en', re),
       'reset': () => this.confirm(t('settings.resetTitle'), t('settings.resetText'), () => {

@@ -63,6 +63,7 @@ const Bosses = {
     Fx.addShake(10);
     if (def.darkness) game.darknessTarget = def.darkness[0];
     if (typeof Hints !== 'undefined') Hints.trigger('boss');
+    sfx('bossRoar');
     return z;
   },
 
@@ -142,6 +143,7 @@ const Bosses = {
     Fx.ring(z.x, z.y, 160, '#ff3a2a', 0.6, 8);
     Fx.addShake(8);
     if (typeof Hints !== 'undefined') Hints.trigger('rage');
+    sfx('bossRoar');
   },
 
   // ---------- Attacks ----------
@@ -500,6 +502,7 @@ const Bosses = {
       if (z.phase === z.phases - 1) z.rage = true;
       if (z.def.darkness) game.darknessTarget = z.def.darkness[z.phase];
       game.fog = z.phase >= 2;
+      sfx('bossRoar');
       // Push the hero away so the next phase starts fair.
       const h = game.hero, a = Math.atan2(h.y - z.y, h.x - z.x);
       h.x += Math.cos(a) * 60;

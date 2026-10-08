@@ -16,6 +16,10 @@ const Weapons = {
   // target: zombie (auto aim) or null; aimPoint: world point for grenades.
   // The multishot perk fires extra copies fanned around the aim angle.
   fire(game, w, angle, target, aimPoint) {
+    if (w.id !== 'turret') {
+      sfx('shot', w);
+      game.hero.muzzle = 0.06;
+    }
     const extra = game.hero.stats.extra;
     const fans = extra > 0 && !w.pellets && w.type !== 'flame' && w.type !== 'tesla';
     if (!fans) return this.fireOne(game, w, angle, target, aimPoint);
@@ -45,6 +49,7 @@ const Weapons = {
           this.spawn(w, m.x, m.y, a, sp, { radius: 2, pierce: 0 });
         }
         Fx.flash(m.x, m.y, n > 1 ? 30 : 20, 'rgba(255,220,140,1)', 0.06);
+        Fx.shell(h.x + Math.cos(angle) * 10, h.y + Math.sin(angle) * 10, angle);
         Fx.burst(m.x, m.y, 3, { angle, cone: 0.6, speed: 260, life: 0.12, size: 2, color: '#ffe08a', kind: 'spark' });
         if (n > 1) Fx.addShake(3);
         break;

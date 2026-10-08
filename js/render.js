@@ -10,6 +10,58 @@ function shade(hex, amt) {
 
 const Render = {
   map: null,
+  sprites: {},
+
+  // Soft radial blob in `color`, cached; drawn with drawImage instead of building
+  // a gradient every frame (much cheaper on phones).
+  glowSprite(color) {
+    let c = this.sprites[color];
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gr.addColorStop(0, color);
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 128, 128);
+      this.sprites[color] = c;
+    }
+    return c;
+  },
+
+  drawGlow(ctx, x, y, r, color, alpha = 1) {
+    if (alpha <= 0.01) return;
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(this.glowSprite(color), x - r, y - r, r * 2, r * 2);
+    ctx.globalAlpha = 1;
+  },
+
+  // Light mask: clear in the middle, `color` towards the edges and beyond.
+  // The gradient ends at a quarter of the canvas, so drawn at 4×R it covers the screen.
+  maskSprite(color, inner) {
+    const key = 'mask:' + color + ':' + inner;
+    let c = this.sprites[key];
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = c.height = 256;
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(128, 128, 64 * inner, 128, 128, 64);
+      gr.addColorStop(0, 'rgba(0,0,0,0)');
+      gr.addColorStop(1, color);
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 256, 256);
+      this.sprites[key] = c;
+    }
+    return c;
+  },
+
+  drawMask(ctx, x, y, radius, color, inner, alpha) {
+    if (alpha <= 0.01) return;
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(this.maskSprite(color, inner), x - radius * 2, y - radius * 2, radius * 4, radius * 4);
+    ctx.globalAlpha = 1;
+  },
 
   buildMap(game) {
     const { w, h } = game.arena;
@@ -418,6 +470,19 @@ const Render = {
     c.globalAlpha = 1;
   },
 
+  // A spent casing left on the asphalt.
+  shellDecal(x, y, rot) {
+    if (!this.map) return;
+    const c = this.map.getContext('2d');
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.globalAlpha = 0.75;
+    c.fillStyle = '#b8862a';
+    c.fillRect(-3, -1.2, 6, 2.4);
+    c.restore();
+  },
+
   scorch(x, y, r) {
     if (!this.map) return;
     const c = this.map.getContext('2d');
@@ -463,9 +528,10 @@ const Render = {
     ctx.fillRect(0, 0, view.w, view.h);
     this.buttons = {};
 
-    const shake = Fx.shake;
-    const camX = Math.round(game.camera.x - view.w / 2 + (Math.random() - 0.5) * shake);
-    const camY = Math.round(game.camera.y - view.h / 2 + (Math.random() - 0.5) * shake);
+    // Smooth screen shake (layered sines instead of random jitter).
+    const shake = Fx.shake, st = game.time;
+    const camX = Math.round(game.camera.x - view.w / 2 + shake * 0.35 * (Math.sin(st * 53) + Math.sin(st * 31.7)));
+    const camY = Math.round(game.camera.y - view.h / 2 + shake * 0.35 * (Math.sin(st * 47.3) + Math.cos(st * 29.1)));
 
     ctx.save();
     ctx.translate(-camX, -camY);
@@ -494,7 +560,7 @@ const Render = {
     ctx.restore();
 
     this.drawDarkness(ctx, game, view, camX, camY);
-    this.drawVignette(ctx, view, game.hero);
+    this.drawVignette(ctx, view, game.state === 'menu' ? null : game.hero, camX, camY);
     if (game.state === 'ending') {
       this.drawEnding(ctx, game, view, input);
       return;
@@ -548,11 +614,7 @@ const Render = {
     ctx.translate(h.x, h.y);
 
     // Lantern light on the ground
-    const glow = ctx.createRadialGradient(0, 0, 10, 0, 0, 110);
-    glow.addColorStop(0, 'rgba(255, 190, 90, 0.16)');
-    glow.addColorStop(1, 'rgba(255, 190, 90, 0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(0, 0, 110, 0, Math.PI * 2); ctx.fill();
+    this.drawGlow(ctx, 0, 0, 120, 'rgba(255,190,90,1)', 0.18);
 
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -576,6 +638,22 @@ const Render = {
     ctx.fillRect(8 - back, 1, 9, 8);
     ctx.fillStyle = w.color;
     ctx.fillRect(4 + len - back, 3, 3, 4);
+    // Muzzle flash
+    if (h.muzzle > 0 && w.type !== 'flame') {
+      const mx = 8 + len - back, my = 5, k = h.muzzle / 0.06;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      this.drawGlow(ctx, mx, my, 22 * k + 8, 'rgba(255,200,110,1)', 0.8);
+      ctx.fillStyle = w.color;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2, r = i % 2 ? 4 : (i === 0 ? 18 : 9) * (0.7 + k * 0.5);
+        ctx.lineTo(mx + Math.cos(a) * r, my + Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
     if (w.id === 'crossbow') {
       ctx.strokeStyle = '#6b4a2b';
       ctx.lineWidth = 2;
@@ -989,21 +1067,24 @@ const Render = {
       const k = p.life / p.max;
       ctx.globalAlpha = p.kind === 'smoke' ? k * 0.45 : Math.min(1, k * 2);
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+      if (p.kind === 'shell') {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillRect(-3, -1.3, 6, 2.6);
+        ctx.restore();
+      } else if (p.size <= 3.5) {
+        // Small particles as squares: far cheaper than arcs.
+        ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+      } else {
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (const f of Fx.flashes) {
-      const k = f.life / f.max;
-      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius);
-      g.addColorStop(0, f.color);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = k;
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2); ctx.fill();
-    }
+    for (const f of Fx.flashes) this.drawGlow(ctx, f.x, f.y, f.radius, f.color, f.life / f.max);
     for (const p of Fx.particles) {
       if (p.kind !== 'fire' && p.kind !== 'spark' && p.kind !== 'plasma') continue;
       const k = p.life / p.max;
@@ -1519,44 +1600,29 @@ const Render = {
 
   // Final boss: the arena darkens around a pool of light; fog in phase 3.
   drawDarkness(ctx, game, view, camX, camY) {
-    if (game.fog) {
-      ctx.save();
-      for (let i = 0; i < 12; i++) {
-        const spd = 14 + (i % 4) * 9;
-        const W = game.arena.w + 600, H = game.arena.h + 400;
-        const fx = ((i * 397 + game.time * spd) % W) - 300 - camX;
-        const fy = ((i * 241 + Math.sin(game.time * 0.3 + i) * 60) % H + H) % H - 200 - camY;
-        const fr = 180 + (i % 3) * 70;
-        if (fx < -fr || fx > view.w + fr || fy < -fr || fy > view.h + fr) continue;
-        const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr);
-        g.addColorStop(0, 'rgba(150,150,160,0.32)');
-        g.addColorStop(1, 'rgba(150,150,160,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(fx - fr, fy - fr, fr * 2, fr * 2);
-      }
-      ctx.restore();
+    // Drifting fog: always a light haze, thick in the final boss's last phase.
+    const thick = game.fog;
+    // Light haze is skipped when adaptive quality has stepped down.
+    const count = thick ? 12 : this.lowFx ? 0 : 6;
+    const W = game.arena.w + 600, H = game.arena.h + 400;
+    for (let i = 0; i < count; i++) {
+      const spd = 10 + (i % 4) * 7;
+      const fx = ((i * 397 + game.time * spd) % W) - 300 - camX;
+      const fy = ((i * 241 + Math.sin(game.time * 0.25 + i) * 60) % H + H) % H - 200 - camY;
+      const fr = 200 + (i % 3) * 80;
+      if (fx < -fr || fx > view.w + fr || fy < -fr || fy > view.h + fr) continue;
+      this.drawGlow(ctx, fx, fy, fr, 'rgba(150,152,165,1)', thick ? 0.3 : 0.07 + (i % 2) * 0.03);
     }
 
     const d = game.darkness;
     if (d < 0.01) return;
     const h = game.hero;
     const hx = h.x - camX, hy = h.y - camY;
-    const g = ctx.createRadialGradient(hx, hy, 60, hx, hy, game.fog ? 230 : 300);
-    g.addColorStop(0, 'rgba(4,0,8,0)');
-    g.addColorStop(1, `rgba(4,0,8,${d})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, view.w, view.h);
+    this.drawMask(ctx, hx, hy, thick ? 230 : 300, 'rgba(4,0,8,1)', 0.25, d);
 
     // The boss's eyes glow through the dark.
     const b = game.boss;
-    if (b && b.state === 'alive') {
-      const bx = b.x - camX, by = b.y - b.air - camY;
-      const eg = ctx.createRadialGradient(bx, by, 0, bx, by, b.r * 1.4);
-      eg.addColorStop(0, 'rgba(255,60,40,0.35)');
-      eg.addColorStop(1, 'rgba(255,60,40,0)');
-      ctx.fillStyle = eg;
-      ctx.beginPath(); ctx.arc(bx, by, b.r * 1.4, 0, Math.PI * 2); ctx.fill();
-    }
+    if (b && b.state === 'alive') this.drawGlow(ctx, b.x - camX, b.y - b.air - camY, b.r * 1.4, 'rgba(255,60,40,1)', 0.35);
   },
 
   drawBossBar(ctx, game, view) {
@@ -2063,19 +2129,13 @@ const Render = {
 
   // ---------- Screen space ----------
 
-  drawVignette(ctx, view, hero) {
-    const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * 0.35, view.w / 2, view.h / 2, view.w * 0.75);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.55)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, view.w, view.h);
-
-    if (hero.hurt > 0) {
-      const r = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * 0.3, view.w / 2, view.h / 2, view.w * 0.65);
-      r.addColorStop(0, 'rgba(200,0,0,0)');
-      r.addColorStop(1, `rgba(200,0,0,${hero.hurt * 1.2})`);
-      ctx.fillStyle = r;
-      ctx.fillRect(0, 0, view.w, view.h);
+  // Dark edges with a pool of light that follows the hero (screen centre in the menu).
+  drawVignette(ctx, view, hero, camX, camY) {
+    const live = hero && !hero.dead;
+    const hx = live ? hero.x - camX : view.w / 2, hy = live ? hero.y - camY : view.h / 2;
+    this.drawMask(ctx, hx, hy, view.w * 0.62, 'rgba(0,0,6,1)', 0.38, 0.62);
+    if (hero && hero.hurt > 0) {
+      this.drawMask(ctx, view.w / 2, view.h / 2, view.w * 0.6, 'rgba(200,0,0,1)', 0.5, Math.min(0.6, hero.hurt * 1.4));
     }
   },
 

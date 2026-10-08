@@ -3,7 +3,42 @@
 const LOGICAL_H = 540;
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+// Opaque canvas: cheaper compositing on phones.
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// Adaptive quality: if the frame rate stays low, render at a lower resolution
+// and keep fewer particles. Only steps down, never back up (no flicker).
+const Quality = {
+  level: 0,
+  dprCaps: [2, 1.5, 1.1],
+  particles: [700, 450, 260],
+  samples: 0,
+  sum: 0,
+  checkAt: 0,
+
+  bad: 0,
+
+  track(rawDt, now) {
+    if (!booted || document.hidden || view.paused || Platform.suspended || rawDt > 0.25) return;
+    if (!this.checkAt) this.checkAt = now + 4000; // warm-up after loading
+    this.sum += rawDt;
+    this.samples++;
+    if (now < this.checkAt) return;
+    this.checkAt = now + 2000;
+    const avg = this.samples > 30 ? this.sum / this.samples : 0;
+    this.sum = 0;
+    this.samples = 0;
+    // Below ~50 FPS for two 2-second windows in a row → step down.
+    this.bad = avg > 1 / 50 ? this.bad + 1 : 0;
+    if (this.bad >= 2 && this.level < this.dprCaps.length - 1) {
+      this.bad = 0;
+      this.level++;
+      Fx.maxParticles = this.particles[this.level];
+      Render.lowFx = true;
+      resize();
+    }
+  },
+};
 
 const view = { w: 960, h: LOGICAL_H, scale: 1 };
 
@@ -17,7 +52,7 @@ const startLevel = Game.debug && params.get('level') ? Number(params.get('level'
 function resize() {
   const cssW = window.innerWidth;
   const cssH = window.innerHeight;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, Quality.dprCaps[Quality.level]);
 
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
@@ -225,8 +260,10 @@ let last = performance.now();
 let booted = false;
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(0.05, rawDt);
   last = now;
+  Quality.track(rawDt, now);
   ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
 
   if (!booted) {
@@ -254,6 +291,7 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
 Game.touch = isTouch;
+Sfx.init();
 // Browser language until the SDK and the save are loaded.
 I18N.setLang(I18N.detect());
 canvas.style.cursor = 'crosshair';

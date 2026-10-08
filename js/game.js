@@ -470,6 +470,7 @@ const Game = {
 
   // Buttons on overlays and HUD (from mouse, touch or keyboard).
   press(name) {
+    sfx('click');
     switch (name) {
       case 'start':
         if (this.state === 'intro') this.beginPlay();
@@ -579,6 +580,7 @@ const Game = {
     }
 
     if (this.state !== 'play') {
+      sfx('flame', false);
       // Overlays freeze the fight; let effects settle behind them.
       if (this.state === 'victory' || this.state === 'defeat') Fx.update(dt);
       this.updateBanners(dt);
@@ -613,6 +615,7 @@ const Game = {
     h.hurt = Math.max(0, h.hurt - dt);
     h.invuln = Math.max(0, h.invuln - dt);
     h.recoil = Math.max(0, h.recoil - dt * 8);
+    h.muzzle = Math.max(0, (h.muzzle || 0) - dt);
     if (h.stats.regen > 0 && h.hp < h.maxHp) h.hp = Math.min(h.maxHp, h.hp + h.stats.regen * dt);
 
     if (this.state === 'play' && this.pendingPerks > 0) this.openPerks();
@@ -681,6 +684,7 @@ const Game = {
     if (h.aiming) h.facing = angle;
 
     h.cooldown -= dt;
+    sfx('flame', firing && angle !== null && w.type === 'flame');
     if (firing && angle !== null) {
       let shots = 0;
       while (h.cooldown <= 0 && shots < 4) {
@@ -846,6 +850,8 @@ const Game = {
       boss: this.config.boss,
       challenge: !!this.config.challenge,
     };
+    sfx('flame', false);
+    sfx('victory');
     this.emit('victory', this.result);
   },
 
@@ -869,6 +875,8 @@ const Game = {
       best: this.streak.best,
       challenge: !!this.config.challenge,
     };
+    sfx('flame', false);
+    sfx('defeat');
     this.emit('defeat', this.result);
   },
 
@@ -879,6 +887,7 @@ const Game = {
     if (this.state !== 'play' || h.dead || sk.t > 0) return;
     sk.t = sk.cd;
     this.stat('skill', 1);
+    sfx('skill');
     const p = sk.power;
     const f = h.facing;
 
@@ -1103,11 +1112,13 @@ const Game = {
       h.lvl++;
       if (this.flags && this.flags.noPerks) {
         // "No perks" challenge: a level-up heals instead.
+        sfx('levelUp');
         const heal = Math.min(h.maxHp - h.hp, 25);
         h.hp += heal;
         Fx.text(h.x, h.y - 30, '+' + Math.round(heal), '#5aff7a', 18);
       } else {
         this.pendingPerks++;
+        sfx('levelUp');
       }
       Fx.ring(h.x, h.y, 70, '#5ad8ff', 0.5, 5);
     }
@@ -1207,6 +1218,7 @@ const Game = {
 
     z.hp -= dmg;
     z.flash = 0.1;
+    if (kind !== 'flame' && kind !== 'burn') sfx('hit');
 
     if (opt.burn) z.burn = { dps: opt.burn.dps, t: opt.burn.time, acc: z.burn ? z.burn.acc : 0 };
 
@@ -1252,6 +1264,7 @@ const Game = {
     if (z.state === 'dead') return;
     if (z.boss && Bosses.onLethal(this, z)) return;
     z.state = 'dead';
+    sfx('zombieDie', z.r > 20);
     if (z.boss) Bosses.onDeath(this, z);
     const angle = opt.angle !== undefined ? opt.angle : Math.random() * Math.PI * 2;
 
@@ -1309,6 +1322,7 @@ const Game = {
   // Area damage. heroDamage > 0 only for hazards (barrels, bloaters).
   explode(x, y, radius, damage, source, heroDamage = 0) {
     Fx.explosion(x, y, radius);
+    sfx('explosion', radius);
     for (const z of this.zombies) {
       if (z.state !== 'alive') continue;
       const d = Math.hypot(z.x - x, z.y - y);
@@ -1359,6 +1373,7 @@ const Game = {
   hurtHero(dmg, src) {
     const h = this.hero;
     if (h.invuln > 0 || h.dead || this.state !== 'play') return;
+    sfx('hurt');
     if (this.tutorial) {
       // Immortal in the tutorial: just a flinch.
       h.hurt = 0.25;
@@ -1416,8 +1431,10 @@ const Game = {
       if (wanted && d < h.r + 8) {
         if (p.kind === 'xp') {
           this.addXp(p.value);
+          sfx('xp');
         } else if (p.kind === 'coin') {
           h.coins += p.value;
+          sfx('coin');
           this.stat('coins', p.value);
           Fx.text(h.x, h.y - 30, '+' + p.value, '#ffd23a', 13);
         } else if (p.kind === 'medkit') {
