@@ -33,10 +33,11 @@ const Render = {
     }
     ctx.globalAlpha = 1;
 
-    this.drawRoads(ctx, w, h, d, rng);
+    const roads = this.drawRoads(ctx, w, h, d, rng);
     this.drawDecals(ctx, w, h, d, rng);
     this.drawBarricades(ctx, w, h, d, rng);
     for (const o of game.obstacles) this.drawObstacle(ctx, o, d);
+    this.drawLamps(ctx, w, h, roads, game.obstacles);
 
     this.map = c;
   },
@@ -96,6 +97,35 @@ const Render = {
     ctx.moveTo(rx - roadW / 2, 0); ctx.lineTo(rx - roadW / 2, h);
     ctx.moveTo(rx + roadW / 2, 0); ctx.lineTo(rx + roadW / 2, h);
     ctx.stroke();
+    return { rx, ry, roadW };
+  },
+
+  // Street lamps along the kerbs: warm amber pools of light.
+  drawLamps(ctx, w, h, roads, obstacles) {
+    const { rx, ry, roadW } = roads;
+    const spots = [];
+    for (let x = 140; x < w - 100; x += 300) {
+      if (Math.abs(x - rx) > roadW) spots.push([x, ry - roadW / 2 - 12], [x + 150, ry + roadW / 2 + 12]);
+    }
+    for (let y = 140; y < h - 100; y += 300) {
+      if (Math.abs(y - ry) > roadW) spots.push([rx - roadW / 2 - 12, y + 150], [rx + roadW / 2 + 12, y]);
+    }
+    for (const [x, y] of spots) {
+      if (x < BORDER + 10 || y < BORDER + 10 || x > w - BORDER - 10 || y > h - BORDER - 10) continue;
+      if (obstacles.some(o => Math.abs(o.x - x) < 60 && Math.abs(o.y - y) < 60)) continue;
+      const g = ctx.createRadialGradient(x, y, 4, x, y, 150);
+      g.addColorStop(0, 'rgba(255,200,110,0.30)');
+      g.addColorStop(0.5, 'rgba(255,170,80,0.10)');
+      g.addColorStop(1, 'rgba(255,170,80,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, 150, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(x + 3, y + 4, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3a3a3e';
+      ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffe2a0';
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    }
   },
 
   drawDecals(ctx, w, h, d, rng) {
@@ -453,6 +483,7 @@ const Render = {
     for (const b of game.barrels) if (!b.dead && vis(b.x, b.y)) this.drawBarrel(ctx, b, game.time);
     for (const z of game.zombies) if (vis(z.x, z.y, z.boss ? 200 : 60)) this.drawZombie(ctx, z, game.time);
     this.drawTargetMarker(ctx, game);
+    this.drawSkillFx(ctx, game);
     if (!game.hero.dead) this.drawHero(ctx, game.hero, game);
     this.drawSaws(ctx, game);
     this.drawProjectiles(ctx);
@@ -465,6 +496,10 @@ const Render = {
     this.drawVignette(ctx, view, game.hero);
     if (game.state === 'ending') {
       this.drawEnding(ctx, game, view, input);
+      return;
+    }
+    if (game.state === 'menu') {
+      this.drawMenuShade(ctx, view);
       return;
     }
     this.drawHud(ctx, game, view, input);
@@ -563,7 +598,7 @@ const Render = {
     ctx.fillStyle = '#d6a77a';
     ctx.beginPath(); ctx.arc(2, 0, 8, 0, Math.PI * 2); ctx.fill();
     // Cap
-    ctx.fillStyle = '#1f2a1f';
+    ctx.fillStyle = h.hat || '#1f2a1f';
     ctx.beginPath(); ctx.arc(1, 0, 8, Math.PI * 0.55, Math.PI * 1.45); ctx.fill();
     ctx.fillRect(5, -5, 6, 10);
 
@@ -1644,6 +1679,187 @@ const Render = {
     ctx.textAlign = 'left';
   },
 
+  // ---------- Hero skills ----------
+
+  drawSkillFx(ctx, game) {
+    for (const s of game.strikes || []) {
+      const k = Math.max(0, s.t / s.max);
+      ctx.strokeStyle = `rgba(255,70,40,${0.5 + (1 - k) * 0.5})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,70,40,0.15)';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r * (1 - k), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(s.x - 14, s.y); ctx.lineTo(s.x + 14, s.y);
+      ctx.moveTo(s.x, s.y - 14); ctx.lineTo(s.x, s.y + 14);
+      ctx.stroke();
+    }
+    for (const t of game.turrets || []) {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(t.x + 3, t.y + 4, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a4a4e';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.save();
+      ctx.translate(t.x, t.y);
+      ctx.rotate(t.a);
+      ctx.fillStyle = '#2a2a2e';
+      ctx.fillRect(0, -3, 20, 6);
+      ctx.fillStyle = '#e0c040';
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#e0c040';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (t.t / 10)); ctx.stroke();
+    }
+    const h = game.hero;
+    if (h && !h.dead && h.frenzy > 0) {
+      ctx.strokeStyle = `rgba(255,80,50,${0.4 + Math.sin(game.time * 20) * 0.2})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(h.x, h.y, h.r + 8, 0, Math.PI * 2); ctx.stroke();
+    }
+  },
+
+  skillIcon: { grenade: '✹', heal: '✚', dash: '➤', turret: '⌖', airstrike: '✜', freeze: '❄', frenzy: '↯' },
+
+  drawSkillButton(ctx, game, view, input) {
+    const sk = game.hero.skill;
+    if (!sk) return;
+    const r = 34, cx = view.w - 24 - r, cy = view.h - 150;
+    if (game.state === 'play') this.buttons.skill = { x: cx - r - 6, y: cy - r - 6, w: r * 2 + 12, h: r * 2 + 12 };
+    const ready = sk.t <= 0;
+    ctx.fillStyle = ready ? 'rgba(255,181,71,0.25)' : 'rgba(0,0,0,0.55)';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = ready ? '#ffb547' : 'rgba(255,207,122,0.35)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    if (!ready) {
+      ctx.strokeStyle = '#ffb547';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, r - 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - sk.t / sk.cd)); ctx.stroke();
+    }
+    this.hudText(ctx, this.skillIcon[sk.id] || '★', cx, cy - 3, ready ? '#ffe2a0' : 'rgba(255,226,160,0.4)', 26, 'center');
+    this.hudText(ctx, ready ? sk.name : String(Math.ceil(sk.t)), cx, cy + 20, ready ? '#ffcf7a' : '#c8b898', ready ? 10 : 13, 'center');
+    if (!input.touch) this.hudText(ctx, 'E', cx + r - 2, cy - r + 4, 'rgba(255,255,255,0.5)', 12, 'center');
+    ctx.textAlign = 'left';
+  },
+
+  drawMenuShade(ctx, view) {
+    const g = ctx.createLinearGradient(0, 0, 0, view.h);
+    g.addColorStop(0, 'rgba(6,8,14,0.55)');
+    g.addColorStop(0.5, 'rgba(6,8,14,0.25)');
+    g.addColorStop(1, 'rgba(6,8,14,0.65)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, view.w, view.h);
+  },
+
+  // ---------- Portraits for menu cards ----------
+
+  // Night skyline for district story windows.
+  storyArt(canvas, dist) {
+    const { ctx, w, h } = this.prepCanvas(canvas);
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#070a14');
+    sky.addColorStop(0.6, '#1a1630');
+    sky.addColorStop(1, shade(dist.accent, -0.35));
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const glow = ctx.createRadialGradient(w * 0.55, h * 0.72, 4, w * 0.55, h * 0.72, w * 0.45);
+    glow.addColorStop(0, dist.accent);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+    const rng = makeRng(DISTRICTS.indexOf(dist) * 31 + 5);
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${0.2 + rng() * 0.5})`;
+      ctx.fillRect(rng() * w, rng() * h * 0.45, 1.5, 1.5);
+    }
+    let x = -6;
+    while (x < w) {
+      const bw = 18 + rng() * 34, bh = h * (0.25 + rng() * 0.4);
+      ctx.fillStyle = '#05060a';
+      ctx.fillRect(x, h - bh, bw, bh);
+      for (let k = 0; k < 5; k++) {
+        if (rng() < 0.45) continue;
+        ctx.fillStyle = rng() < 0.7 ? 'rgba(255,190,90,0.75)' : 'rgba(255,90,70,0.6)';
+        ctx.fillRect(x + 4 + rng() * (bw - 10), h - bh + 8 + rng() * (bh - 16), 3, 4);
+      }
+      x += bw + 2;
+    }
+  },
+
+  prepCanvas(canvas) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth || canvas.width, h = canvas.clientHeight || canvas.height;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  },
+
+  portraitHero(canvas, id, weaponIndex = 0) {
+    const def = HEROES[id];
+    const { ctx, w, h } = this.prepCanvas(canvas);
+    const g = ctx.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, Math.max(w, h) * 0.6);
+    g.addColorStop(0, 'rgba(255,190,90,0.35)');
+    g.addColorStop(1, 'rgba(255,190,90,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2 - 6, h / 2);
+    const sc = Math.min(w, h) / 58;
+    ctx.scale(sc, sc);
+    this.drawHero(ctx, {
+      x: 0, y: 0, r: 16, facing: -0.35, moving: false, walkTime: 0, weapon: weaponIndex, recoil: 0,
+      hurt: 0, invuln: 0, color: def.color, hat: def.hat,
+    }, { time: 0 });
+    ctx.restore();
+  },
+
+  portraitWeapon(canvas, w) {
+    const { ctx, w: cw, h: ch } = this.prepCanvas(canvas);
+    const len = { pistol: 0.45, smg: 0.62, shotgun: 0.8, crossbow: 0.7, flamer: 0.78, launcher: 0.78, tesla: 0.68, plasma: 0.72, rocket: 0.9, minigun: 0.85 }[w.id] || 0.7;
+    const L = Math.min(cw * len, ch * 4.2 * len), x0 = (cw - L) / 2, y0 = ch / 2 - ch * 0.08;
+    const g = ctx.createRadialGradient(cw / 2, ch / 2, 2, cw / 2, ch / 2, cw * 0.5);
+    g.addColorStop(0, 'rgba(255,190,90,0.22)');
+    g.addColorStop(1, 'rgba(255,190,90,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cw, ch);
+    const bh = Math.max(6, ch * 0.26);
+    ctx.fillStyle = '#2a2a2e';
+    // Body and barrel
+    this.roundRect(ctx, x0, y0 - bh / 2, L * 0.55, bh, 3); ctx.fill();
+    ctx.fillRect(x0 + L * 0.5, y0 - bh * 0.3, L * 0.5, bh * 0.6);
+    // Grip
+    ctx.save();
+    ctx.translate(x0 + L * 0.22, y0 + bh / 2);
+    ctx.rotate(0.25);
+    ctx.fillStyle = '#4a3a2a';
+    ctx.fillRect(-bh * 0.35, 0, bh * 0.7, bh * 1.3);
+    ctx.restore();
+    // Type details
+    ctx.fillStyle = w.color;
+    switch (w.type) {
+      case 'flame': ctx.beginPath(); ctx.arc(x0 + L * 0.3, y0 - bh, bh * 0.7, 0, Math.PI * 2); ctx.fill(); break;
+      case 'grenade': case 'rocket': ctx.fillRect(x0 + L * 0.35, y0 - bh * 0.6, L * 0.65, bh * 1.2); ctx.fillStyle = '#2a2a2e'; ctx.fillRect(x0 + L * 0.37, y0 - bh * 0.4, L * 0.6, bh * 0.8); break;
+      case 'tesla': for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x0 + L * (0.6 + i * 0.12), y0, bh * 0.45, 0, Math.PI * 2); ctx.fill(); } break;
+      case 'plasma': ctx.beginPath(); ctx.arc(x0 + L * 0.35, y0, bh * 0.55, 0, Math.PI * 2); ctx.fill(); break;
+      case 'bolt':
+        ctx.strokeStyle = '#8a6a4a';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(x0 + L * 0.8, y0 - bh * 2.2); ctx.quadraticCurveTo(x0 + L * 0.95, y0, x0 + L * 0.8, y0 + bh * 2.2); ctx.stroke();
+        break;
+      default:
+        if (w.id === 'minigun') for (let i = -1; i <= 1; i++) ctx.fillRect(x0 + L * 0.5, y0 + i * bh * 0.32 - 1, L * 0.5, 2);
+        if (w.id === 'smg' || w.id === 'minigun') { ctx.fillStyle = '#3a3a3e'; ctx.fillRect(x0 + L * 0.3, y0 + bh / 2, bh * 0.6, bh * 1.4); }
+    }
+    ctx.fillStyle = w.color;
+    ctx.fillRect(x0 + L - 4, y0 - bh * 0.3, 4, bh * 0.6);
+  },
+
   // ---------- Screen space ----------
 
   drawVignette(ctx, view, hero) {
@@ -1781,7 +1997,20 @@ const Render = {
     }
 
     // ---- Right: live star goals, aim mode, weapon ----
-    const pw = 260, rx = view.w - 16 - pw;
+    // Pause button in the corner; star panel sits left of it.
+    const pb = 46;
+    if (play) this.buttons.pause = { x: view.w - 12 - pb, y: 12, w: pb, h: pb };
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this.roundRect(ctx, view.w - 12 - pb, 12, pb, pb, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,122,0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#ffcf7a';
+    ctx.fillRect(view.w - 12 - pb + 15, 26, 5, 18);
+    ctx.fillRect(view.w - 12 - pb + 26, 26, 5, 18);
+    this.drawSkillButton(ctx, game, view, input);
+
+    const pw = 250, rx = view.w - 24 - pb - pw;
     const goals = game.starGoals();
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     this.roundRect(ctx, rx, 12, pw, goals.length * 22 + 10, 8); ctx.fill();
@@ -1797,7 +2026,7 @@ const Render = {
     });
 
     const ay = 12 + goals.length * 22 + 18;
-    if (play) this.buttons.aim = { x: rx, y: ay, w: pw, h: 30 };
+    if (play && game.debug) this.buttons.aim = { x: rx, y: ay, w: pw, h: 30 };
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     this.roundRect(ctx, rx, ay, pw, 30, 8); ctx.fill();
     const auto = game.aimMode === 'auto';
@@ -1843,7 +2072,8 @@ const Render = {
   // ---------- Overlays: new enemy, perk choice, victory, defeat ----------
 
   drawOverlay(ctx, game, view, input) {
-    if (game.state === 'play') return;
+    // Victory, defeat and pause are DOM windows (ui.js).
+    if (game.state !== 'intro' && game.state !== 'perk') return;
     const t = game.stateTime;
     ctx.fillStyle = `rgba(5,6,10,${Math.min(0.72, t * 3)})`;
     ctx.fillRect(0, 0, view.w, view.h);
@@ -1854,8 +2084,6 @@ const Render = {
     switch (game.state) {
       case 'intro': this.drawIntro(ctx, game, view, cx, input); break;
       case 'perk': this.drawPerks(ctx, game, view, cx, input); break;
-      case 'victory': this.drawVictory(ctx, game, view, cx, input); break;
-      case 'defeat': this.drawDefeat(ctx, game, view, cx, input); break;
     }
     ctx.restore();
   },
@@ -1936,63 +2164,6 @@ const Render = {
       }
       if (!input.touch) this.hudText(ctx, String(i + 1), x + cw / 2, yy + ch - 16, 'rgba(255,255,255,0.45)', 13, 'center');
     });
-  },
-
-  drawVictory(ctx, game, view, cx, input) {
-    const r = game.result;
-    const w = 560, h = 400, x = cx - w / 2, y = (view.h - h) / 2;
-    this.panel(ctx, x, y, w, h, '#ffd23a');
-    this.hudText(ctx, 'ПОБЕДА!', cx, y + 36, '#ffd23a', 34, 'center');
-    this.hudText(ctx, `Уровень ${game.level} · ${game.district.name}`, cx, y + 66, '#a89878', 13, 'center');
-
-    // Stars pop in one by one.
-    for (let i = 0; i < 3; i++) {
-      const sx = cx + (i - 1) * 86, sy = y + 120 + (i === 1 ? -10 : 0);
-      const t0 = 0.45 + i * 0.45;
-      const on = i < r.stars && game.stateTime > t0;
-      const pop = on ? Math.min(1, (game.stateTime - t0) * 5) : 1;
-      const sc = on ? 1 + Math.sin(pop * Math.PI) * 0.35 : 1;
-      this.starShape(ctx, sx, sy, 34 * sc);
-      ctx.fillStyle = on ? '#ffd23a' : 'rgba(255,255,255,0.08)';
-      ctx.fill();
-      ctx.strokeStyle = on ? '#fff3b0' : 'rgba(255,255,255,0.25)';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-    }
-
-    r.goals.forEach((g, i) => {
-      const gy = y + 182 + i * 24;
-      const ok = g.state === 'ok';
-      this.hudText(ctx, ok ? '✔' : '✘', x + 90, gy, ok ? '#7aff8a' : '#ff6a5a', 16, 'center');
-      this.hudText(ctx, g.text, x + 108, gy, ok ? '#f3e3c0' : '#8a7a6a', 15);
-      if (g.progress) this.hudText(ctx, g.progress, x + w - 90, gy, ok ? '#f3e3c0' : '#8a7a6a', 15, 'right');
-    });
-
-    const mm = Math.floor(r.time / 60), ss = String(Math.floor(r.time % 60)).padStart(2, '0');
-    this.hudText(ctx, `☠ ${r.kills}   ⏱ ${mm}:${ss}   Лучшая серия ×${r.best}`, cx, y + 266, '#c8b898', 14, 'center');
-    this.hudText(ctx, `● ${r.coins} + ${r.bonus} награда`, cx, y + 292, '#ffd23a', 18, 'center');
-
-    const by = y + h - 70;
-    this.button(ctx, 'retry', cx - 190, by, 170, 48, 'ЗАНОВО', '#c8b898');
-    if (game.level < 100) {
-      this.button(ctx, 'next', cx + 20, by, 170, 48, 'ДАЛЬШЕ', '#ffb547', true);
-      if (!input.touch) this.hudText(ctx, 'Enter', cx + 200, by + 25, 'rgba(255,255,255,0.4)', 12);
-    } else {
-      this.hudText(ctx, 'Город спасён!', cx + 105, by + 25, '#ffd23a', 18, 'center');
-    }
-  },
-
-  drawDefeat(ctx, game, view, cx, input) {
-    const r = game.result;
-    const w = 480, h = 290, x = cx - w / 2, y = (view.h - h) / 2;
-    this.panel(ctx, x, y, w, h, '#e0402e');
-    this.hudText(ctx, 'ТЫ ПОГИБ', cx, y + 42, '#ff5a4a', 36, 'center');
-    this.hudText(ctx, `Уровень ${game.level} · ${game.district.name}`, cx, y + 74, '#a89878', 13, 'center');
-    this.hudText(ctx, `Дошёл до волны ${r.wave}/${r.waves}`, cx, y + 118, '#f3e3c0', 18, 'center');
-    this.hudText(ctx, `☠ ${r.kills}`, cx, y + 148, '#c8b898', 16, 'center');
-    this.hudText(ctx, `● ${r.coins} (половина собранного)`, cx, y + 176, '#ffd23a', 16, 'center');
-    this.button(ctx, 'retry', cx - 100, y + h - 70, 200, 48, 'ЗАНОВО', '#ffb547', true);
-    if (!input.touch) this.hudText(ctx, 'Enter', cx + 112, y + h - 45, 'rgba(255,255,255,0.4)', 12);
   },
 
   drawCrosshair(ctx, x, y, game) {

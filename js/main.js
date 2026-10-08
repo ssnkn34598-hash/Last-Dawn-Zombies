@@ -97,24 +97,31 @@ window.addEventListener('keydown', e => {
       // Debug only: 1–9, 0 — weapons.
       Game.setWeapon(n === 0 ? 9 : n - 1);
     }
-  } else if (e.code === 'KeyM') {
-    // Until the aim setting lands in the settings menu.
+  } else if (e.code === 'KeyM' && Game.debug) {
+    // Debug only; players switch aim in the settings.
     Game.toggleAim();
   } else if (e.code === 'KeyK' && Game.debug) {
     // Debug: hurt the boss by 30% or clear the current wave.
     Game.debugSkip();
+  } else if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (Game.state === 'play') Game.pause();
+  } else if ((e.code === 'KeyE' || e.code === 'Space') && Game.state === 'play') {
+    Game.useSkill();
+    e.preventDefault();
   } else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
     if (Game.state === 'intro') Game.press('start');
     else if (Game.state === 'ending') Game.press(Game.stateTime > ENDING_CREDITS_END ? 'endnext' : 'skip');
-    else if (Game.state === 'victory') Game.press(Game.level < 100 ? 'next' : 'retry');
-    else if (Game.state === 'defeat') Game.press('retry');
     e.preventDefault();
-  } else if (e.code === 'KeyR') {
-    Game.press('retry');
   }
+});
+
+// Leaving the tab or app pauses the fight.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && Game.state === 'play') Game.pause();
 });
 window.addEventListener('keyup', e => input.keys.delete(e.code));
 window.addEventListener('blur', () => {
+  if (Game.state === 'play' && !Game.debug) Game.pause();
   input.keys.clear();
   input.mouseDown = false;
   input.joystick.active = false;
@@ -233,7 +240,10 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
-Game.start(startLevel);
+UI.init();
+// ?debug&level=N jumps straight into a level; otherwise start in the menu.
+if (Game.debug && params.get('level')) UI.startLevel(startLevel);
+else UI.showMenu();
 Game.clampCamera(view);
 canvas.style.cursor = 'crosshair';
 requestAnimationFrame(t => { last = t; frame(t); });

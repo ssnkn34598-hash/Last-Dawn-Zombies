@@ -1,31 +1,52 @@
 // ВРЕМЕННАЯ заглушка. Замените на js/data.js из rassvet-starter.zip.
-// Каркас использует DISTRICTS, HEROES.max, WEAPONS, ZOMBIES, PERKS, DROPS и levelConfig(n).
+// Каркас использует DISTRICTS, HEROES, WEAPONS, ZOMBIES, PERKS, BOSSES, QUESTS, ECONOMY,
+// DROPS, ENDING и levelConfig(n).
 
 const DISTRICTS = [
-  { id: 'outskirts',  name: 'Окраина',  levels: [1, 20],   ground: '#2b2f2a', groundAlt: '#33382f', road: '#26282b', line: '#c9a54a', accent: '#ffb547', debris: '#4a4136', barricade: '#6b4a2b' },
-  { id: 'industrial', name: 'Промзона', levels: [21, 40],  ground: '#2e2c29', groundAlt: '#38342e', road: '#232324', line: '#d0d0c0', accent: '#ff8a3a', debris: '#4d4238', barricade: '#5a4a3a' },
-  { id: 'center',     name: 'Центр',    levels: [41, 60],  ground: '#2a2b30', groundAlt: '#32333a', road: '#1f2024', line: '#e0e0e0', accent: '#ffd36b', debris: '#45434a', barricade: '#6b5030' },
-  { id: 'port',       name: 'Порт',     levels: [61, 80],  ground: '#262d31', groundAlt: '#2d363b', road: '#202528', line: '#e0c040', accent: '#6bd0ff', debris: '#3a4246', barricade: '#4a3a2a' },
-  { id: 'quarantine', name: 'Карантин', levels: [81, 100], ground: '#2c2a2e', groundAlt: '#352f37', road: '#211f24', line: '#d84a4a', accent: '#ff5a5a', debris: '#463c46', barricade: '#5a3030' },
+  { id: 'outskirts',  name: 'Окраина',  levels: [1, 20],   ground: '#2b2f2a', groundAlt: '#33382f', road: '#26282b', line: '#c9a54a', accent: '#ffb547', debris: '#4a4136', barricade: '#6b4a2b',
+    story: 'Связь пропала три дня назад. Макс выбрался из подвала на окраине и увидел, что улицы стали чужими. Где-то в центре ещё работает радио — значит, кто-то жив. Нужно пробиться через баррикады.' },
+  { id: 'industrial', name: 'Промзона', levels: [21, 40],  ground: '#2e2c29', groundAlt: '#38342e', road: '#232324', line: '#d0d0c0', accent: '#ff8a3a', debris: '#4d4238', barricade: '#5a4a3a',
+    story: 'Заводы встали, но цеха не пустуют. Здесь собирают в стаи плевунов и толстяков — кто-то ими управляет. В бензобаках ещё есть топливо, а в бочках — порох.' },
+  { id: 'center',     name: 'Центр',    levels: [41, 60],  ground: '#2a2b30', groundAlt: '#32333a', road: '#1f2024', line: '#e0e0e0', accent: '#ffd36b', debris: '#45434a', barricade: '#6b5030',
+    story: 'Площадь, мэрия, торговые центры. Раньше здесь гуляли люди, теперь бродит король этих улиц. Радиосигнал всё сильнее: его передают из порта.' },
+  { id: 'port',       name: 'Порт',     levels: [61, 80],  ground: '#262d31', groundAlt: '#2d363b', road: '#202528', line: '#e0c040', accent: '#6bd0ff', debris: '#3a4246', barricade: '#4a3a2a',
+    story: 'Корабли так и не ушли. Связист держит частоту и зовёт всех, кто остался. Но на его зов идут не только живые.' },
+  { id: 'quarantine', name: 'Карантин', levels: [81, 100], ground: '#2c2a2e', groundAlt: '#352f37', road: '#211f24', line: '#d84a4a', accent: '#ff5a5a', debris: '#463c46', barricade: '#5a3030',
+    story: 'За забором карантинной зоны всё началось. Где-то там нулевой пациент — источник заразы. Если остановить его, город увидит рассвет.' },
 ];
 
+// Герои. Макс есть сразу, остальных открывают за золото (gold).
+// skill — активный навык (E / пробел на ПК, круглая кнопка на телефоне).
 const HEROES = {
-  max: { name: 'Макс', hp: 100, speed: 210, color: '#3d6fa8', magnet: 110 },
+  max:   { name: 'Макс',  role: 'Выживший',  hp: 100, speed: 210, color: '#3d6fa8', hat: '#1f2a1f', magnet: 110, gold: 0,
+           skill: { id: 'grenade',   name: 'Граната',      cd: 8,  desc: 'Бросает мощную гранату в ближайшую толпу.' } },
+  lena:  { name: 'Лена',  role: 'Медик',     hp: 95,  speed: 220, color: '#e8e8e8', hat: '#c83a3a', magnet: 130, gold: 50,
+           skill: { id: 'heal',      name: 'Аптечка',      cd: 18, desc: 'Лечит 40% здоровья и даёт регенерацию.' } },
+  boris: { name: 'Борис', role: 'Громила',   hp: 150, speed: 190, color: '#5a3a2a', hat: '#2a2a2a', magnet: 100, gold: 80,
+           skill: { id: 'dash',      name: 'Таран',        cd: 7,  desc: 'Рывок вперёд: сбивает и ранит зомби на пути.' } },
+  nika:  { name: 'Ника',  role: 'Инженер',   hp: 100, speed: 210, color: '#d87a2a', hat: '#e0c040', magnet: 110, gold: 120,
+           skill: { id: 'turret',    name: 'Турель',       cd: 18, desc: 'Ставит турель, которая 10 секунд стреляет сама.' } },
+  kim:   { name: 'Ким',   role: 'Сержант',   hp: 120, speed: 205, color: '#5a6a3a', hat: '#3a4a2a', magnet: 110, gold: 160,
+           skill: { id: 'airstrike', name: 'Авиаудар',     cd: 22, desc: 'Вызывает серию взрывов вокруг героя.' } },
+  taya:  { name: 'Тая',   role: 'Тень',      hp: 90,  speed: 235, color: '#5a3a7a', hat: '#2a1a3a', magnet: 120, gold: 200,
+           skill: { id: 'freeze',    name: 'Заморозка',    cd: 16, desc: 'Замораживает всех зомби рядом на 3 секунды.' } },
+  doc:   { name: 'Док',   role: 'Химик',     hp: 110, speed: 210, color: '#3a7a5a', hat: '#eaeaea', magnet: 110, gold: 250,
+           skill: { id: 'frenzy',    name: 'Стимулятор',   cd: 20, desc: '6 секунд: +50% урона и скорострельности.' } },
 };
 
 // type: bullet | bolt | flame | grenade | tesla | plasma | rocket
 // rate — выстрелов в секунду, range — дальность (и радиус автоприцела).
 const WEAPONS = [
-  { id: 'pistol',   name: 'Пистолет',      type: 'bullet',  damage: 14, rate: 4,   range: 460, speed: 950, spread: 0.04, color: '#ffe08a' },
-  { id: 'smg',      name: 'Автомат',       type: 'bullet',  damage: 9,  rate: 11,  range: 420, speed: 1000, spread: 0.11, color: '#ffd36b' },
-  { id: 'shotgun',  name: 'Дробовик',      type: 'bullet',  damage: 9,  rate: 1.4, range: 300, speed: 900, spread: 0.32, pellets: 7, knock: 140, color: '#ffc45a' },
-  { id: 'crossbow', name: 'Арбалет',       type: 'bolt',    damage: 48, rate: 1.4, range: 560, speed: 1150, pierce: 4, knock: 90, color: '#c9e6ff' },
-  { id: 'flamer',   name: 'Огнемёт',       type: 'flame',   damage: 4,  rate: 28,  range: 210, speed: 420, burn: { dps: 8, time: 2.5 }, color: '#ff8a2a' },
-  { id: 'launcher', name: 'Гранатомёт',    type: 'grenade', damage: 70, rate: 1,   range: 400, radius: 105, color: '#9bd36b' },
-  { id: 'tesla',    name: 'Тесла',         type: 'tesla',   damage: 22, rate: 3,   range: 330, chains: 5, chainRange: 170, color: '#8fd8ff' },
-  { id: 'plasma',   name: 'Плазмаган',     type: 'plasma',  damage: 32, rate: 3.2, range: 480, speed: 620, pierce: 3, radius: 45, color: '#c46bff' },
-  { id: 'rocket',   name: 'Ракетница',     type: 'rocket',  damage: 120, rate: 0.75, range: 560, speed: 260, radius: 140, color: '#ff5a3a' },
-  { id: 'minigun',  name: 'Пулемёт',       type: 'bullet',  damage: 8,  rate: 20,  range: 440, speed: 1050, spread: 0.16, color: '#ffe8a8' },
+  { id: 'pistol', unlock: 1, desc: 'Надёжный. С него всё начинается.',   name: 'Пистолет',      type: 'bullet',  damage: 14, rate: 4,   range: 460, speed: 950, spread: 0.04, color: '#ffe08a' },
+  { id: 'smg', unlock: 5, desc: 'Быстрая очередь, разброс побольше.',      name: 'Автомат',       type: 'bullet',  damage: 9,  rate: 11,  range: 420, speed: 1000, spread: 0.11, color: '#ffd36b' },
+  { id: 'shotgun', unlock: 9, desc: 'Веер дроби — сносит толпу вблизи.',  name: 'Дробовик',      type: 'bullet',  damage: 9,  rate: 1.4, range: 300, speed: 900, spread: 0.32, pellets: 7, knock: 140, color: '#ffc45a' },
+  { id: 'crossbow', unlock: 14, desc: 'Болт пробивает несколько врагов.', name: 'Арбалет',       type: 'bolt',    damage: 48, rate: 1.4, range: 560, speed: 1150, pierce: 4, knock: 90, color: '#c9e6ff' },
+  { id: 'flamer', unlock: 19, desc: 'Поджигает всё перед собой.',   name: 'Огнемёт',       type: 'flame',   damage: 4,  rate: 28,  range: 210, speed: 420, burn: { dps: 8, time: 2.5 }, color: '#ff8a2a' },
+  { id: 'launcher', unlock: 25, desc: 'Граната по дуге, взрыв по площади.', name: 'Гранатомёт',    type: 'grenade', damage: 70, rate: 1,   range: 400, radius: 105, color: '#9bd36b' },
+  { id: 'tesla', unlock: 33, desc: 'Молния перескакивает между врагами.',    name: 'Тесла',         type: 'tesla',   damage: 22, rate: 3,   range: 330, chains: 5, chainRange: 170, color: '#8fd8ff' },
+  { id: 'plasma', unlock: 45, desc: 'Сгусток плазмы прожигает насквозь.',   name: 'Плазмаган',     type: 'plasma',  damage: 32, rate: 3.2, range: 480, speed: 620, pierce: 3, radius: 45, color: '#c46bff' },
+  { id: 'rocket', unlock: 60, desc: 'Самонаводящаяся ракета, огромный взрыв.',   name: 'Ракетница',     type: 'rocket',  damage: 120, rate: 0.75, range: 560, speed: 260, radius: 140, color: '#ff5a3a' },
+  { id: 'minigun', unlock: 75, desc: 'Шквал пуль без остановки.',  name: 'Пулемёт',       type: 'bullet',  damage: 8,  rate: 20,  range: 440, speed: 1050, spread: 0.16, color: '#ffe8a8' },
 ];
 
 // behavior: chase | lunge | ranged | explode | scream | leap
@@ -152,6 +173,37 @@ const ENDING = {
     ['Спасибо, что играл!', ''],
   ],
 };
+
+// Экономика: улучшения за монеты, золото за боссов, звёзды и задания.
+const ECONOMY = {
+  weaponMaxLevel: 10,
+  heroMaxLevel: 10,
+  weaponCost: lvl => Math.round(60 * Math.pow(1.45, lvl - 1) / 10) * 10,
+  heroCost: lvl => Math.round(90 * Math.pow(1.5, lvl - 1) / 10) * 10,
+  weaponDamagePerLevel: 0.12,
+  weaponRatePerLevel: 0.03,
+  heroHpPerLevel: 0.08,
+  heroSkillPerLevel: 0.1,
+  bossGold: 25,          // первая победа над боссом
+  threeStarGold: 2,      // первые три звезды на уровне
+  startCoins: 0,
+};
+
+// Задания (постоянные). stat — счётчик из сохранения.
+const QUESTS = [
+  { id: 'kill100',   text: 'Убей 100 зомби',           stat: 'kills',     goal: 100,   reward: { coins: 150 } },
+  { id: 'kill1000',  text: 'Убей 1000 зомби',          stat: 'kills',     goal: 1000,  reward: { coins: 600, gold: 10 } },
+  { id: 'kill5000',  text: 'Убей 5000 зомби',          stat: 'kills',     goal: 5000,  reward: { gold: 40 } },
+  { id: 'level10',   text: 'Пройди 10 уровней',        stat: 'levels',    goal: 10,    reward: { coins: 300 } },
+  { id: 'level50',   text: 'Пройди 50 уровней',        stat: 'levels',    goal: 50,    reward: { gold: 30 } },
+  { id: 'boss1',     text: 'Победи первого босса',     stat: 'bosses',    goal: 1,     reward: { coins: 200 } },
+  { id: 'boss5',     text: 'Победи 5 боссов',          stat: 'bosses',    goal: 5,     reward: { gold: 20 } },
+  { id: 'stars30',   text: 'Собери 30 звёзд',          stat: 'stars',     goal: 30,    reward: { coins: 400 } },
+  { id: 'stars150',  text: 'Собери 150 звёзд',         stat: 'stars',     goal: 150,   reward: { gold: 30 } },
+  { id: 'streak30',  text: 'Сделай серию ×30',         stat: 'bestStreak', goal: 30,   reward: { coins: 300 } },
+  { id: 'upgrade5',  text: 'Улучши оружие 5 раз',      stat: 'upgrades',  goal: 5,     reward: { coins: 250 } },
+  { id: 'hero2',     text: 'Открой второго героя',     stat: 'heroes',    goal: 2,     reward: { coins: 500 } },
+];
 
 const DROPS = {
   medkitChance: 0.035,
