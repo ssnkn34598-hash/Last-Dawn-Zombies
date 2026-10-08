@@ -8,16 +8,12 @@ function tutTouch() {
 }
 
 function aimHint() {
-  if (Game.aimMode === 'auto') return 'Подойди ближе — в режиме «Авто» герой сам целится в ближайшего зомби и стреляет.';
-  return tutTouch()
-    ? 'Правый джойстик — прицел и огонь: тяни его в сторону зомби.'
-    : 'Наведи мышь на зомби и зажми левую кнопку — огонь!';
+  if (Game.aimMode === 'auto') return t('tut.aimAuto');
+  return t(tutTouch() ? 'tut.aimTouch' : 'tut.aimMouse');
 }
 
 function skillHint(sk) {
-  return tutTouch()
-    ? `Нажми круглую кнопку справа — навык «${sk.name}».`
-    : `Нажми E или пробел — навык «${sk.name}».`;
+  return t(tutTouch() ? 'tut.skillTouch' : 'tut.skillKeys', { name: L(sk.name) });
 }
 
 const Tutorial = {
@@ -48,12 +44,12 @@ const Tutorial = {
       if (tut.step >= TUTORIAL_STEPS - 1) {
         tut.phase = 'finish';
         tut.doneT = 1.4;
-        game.banner('ОБУЧЕНИЕ ПРОЙДЕНО', '#7aff8a', 2, '', true);
+        game.banner(t('ban.tutorialDone'), '#7aff8a', 2, '', true);
         return;
       }
       tut.phase = 'praise';
       tut.doneT = 1.3;
-      game.banner(['Отлично!', 'Так держать!', 'Хорошо!', 'Молодец!'][tut.step % 4], '#7aff8a', 1.2);
+      game.banner(t('ban.praise' + ((tut.step % 4) + 1)), '#7aff8a', 1.2);
     }
   },
 
@@ -73,7 +69,7 @@ const Tutorial = {
 
   hint(game) {
     const tut = game.tutorial;
-    if (tut.hintOverride) return tut.hintOverride;
+    if (tut.hintOverride) return t(tut.hintOverride);
     const s = this.steps[tut.step];
     return typeof s.hint === 'function' ? s.hint(game, tut) : s.hint;
   },
@@ -111,9 +107,7 @@ const Tutorial = {
   steps: [
     // 1. Movement
     {
-      hint: () => tutTouch()
-        ? 'Привет, я Ворон. Веди пальцем по левой половине экрана — это джойстик. Беги к светящейся точке!'
-        : 'Привет, я Ворон. Двигайся клавишами WASD или стрелками. Беги к светящейся точке!',
+      hint: () => t(tutTouch() ? 'tut.s1Touch' : 'tut.s1Keys'),
       start(game, tut) {
         const h = game.hero;
         const a = Tutorial.openDir(game) + 0.8;
@@ -130,7 +124,7 @@ const Tutorial = {
     },
     // 2. Shooting (aim mode aware)
     {
-      hint: () => `${aimHint()} Убей трёх зомби.`,
+      hint: () => t('tut.s2', { aim: aimHint() }),
       start(game) {
         Tutorial.spawnAround(game, 'walker', 3, 330, Tutorial.openDir(game), 0.35);
         for (const z of game.zombies) z.speed *= 0.6;
@@ -142,7 +136,7 @@ const Tutorial = {
     },
     // 3. Loot
     {
-      hint: 'Подбери опыт ◆ и монеты ● — просто подойди ближе, они притянутся сами.',
+      hint: () => t('tut.s3'),
       start(game) {
         const h = game.hero;
         const a0 = Tutorial.openDir(game);
@@ -168,9 +162,7 @@ const Tutorial = {
     },
     // 4. Explosive barrel
     {
-      hint: () => Game.aimMode === 'auto'
-        ? 'Красная бочка взрывается от выстрела! Встань так, чтобы бочка была между тобой и зомби.'
-        : 'Красная бочка взрывается от выстрела! Подожди, пока зомби подойдут к ней, и стреляй в бочку.',
+      hint: () => t(Game.aimMode === 'auto' ? 'tut.s4Auto' : 'tut.s4Manual'),
       start(game, tut) {
         const h = game.hero;
         const a = Tutorial.openDir(game);
@@ -184,7 +176,7 @@ const Tutorial = {
       update(game, tut) {
         if (tut.barrel.dead) {
           // Clean up whoever survived the blast.
-          if (game.zombies.length) tut.hintOverride = 'Бабах! Добей тех, кто остался.';
+          if (game.zombies.length) tut.hintOverride = 'tut.s4Boom';
           return !game.zombies.length;
         }
         // If all zombies died without the barrel, send more.
@@ -195,7 +187,7 @@ const Tutorial = {
     },
     // 5. Perk
     {
-      hint: 'Опыт копится в синей полоске. На новом уровне выбери одно из трёх улучшений — оно действует до конца боя.',
+      hint: () => t('tut.s5'),
       start(game) {
         const h = game.hero;
         h.xp = 0;
@@ -208,7 +200,7 @@ const Tutorial = {
     },
     // 6. Hero skill
     {
-      hint: game => `${skillHint(game.hero.skill)} Он перезаряжается — следи за кругом на кнопке.`,
+      hint: game => t('tut.s6', { skill: skillHint(game.hero.skill) }),
       start(game, tut) {
         game.hero.skill.t = 0;
         tut.used = false;
@@ -223,7 +215,7 @@ const Tutorial = {
     },
     // 7. Danger zones
     {
-      hint: (game, tut) => `Красный круг — сюда сейчас ударят. Выбеги из него! Увернулся: ${tut.dodged}/3`,
+      hint: (game, tut) => t('tut.s7', { n: tut.dodged }),
       start(game, tut) {
         // Clear the street so only the red circles matter.
         for (const z of game.zombies) {
@@ -248,7 +240,7 @@ const Tutorial = {
           Fx.explosion(d.x, d.y, d.r);
           const hit = Math.hypot(game.hero.x - d.x, game.hero.y - d.y) < d.r + game.hero.r * 0.5;
           if (hit) {
-            game.banner('Не успел! Ещё раз', '#ff7a5a', 1.1);
+            game.banner(t('ban.missed'), '#ff7a5a', 1.1);
             game.hero.hurt = 0.3;
           } else {
             tut.dodged++;
@@ -261,7 +253,7 @@ const Tutorial = {
     },
     // 8. Final sweep
     {
-      hint: 'Последнее задание: зачисти улицу! Здесь ты бессмертен — смело пробуй всё, чему научился.',
+      hint: () => t('tut.s8'),
       start(game, tut) {
         for (const z of game.zombies) z.state = 'dead';
         tut.spawned = false;
@@ -287,13 +279,14 @@ const Tutorial = {
 
 const Hints = {
   text: {
-    boss: 'Это босс! Красные зоны показывают, куда он ударит, — успей отойти.',
-    rage: 'Босс в ярости: бьёт чаще и сильнее. Держи дистанцию!',
-    perk: 'Улучшения действуют до конца уровня. Выбирай то, что подходит твоему оружию.',
-    lowhp: 'Мало здоровья! Отойди от толпы — аптечки выпадают из зомби.',
-    streak: 'Серия ×10! Убивай без пауз — за длинные серии дают звёзды.',
-    menuUpgrade: 'Монет хватает на улучшение — загляни в Арсенал.',
-    menuHero: 'Золота хватает на нового героя — загляни во вкладку «Герои».',
+    // Keys of the i18n dictionary (hint.*).
+    boss: 'hint.boss',
+    rage: 'hint.rage',
+    perk: 'hint.perk',
+    lowhp: 'hint.lowhp',
+    streak: 'hint.streak',
+    menuUpgrade: 'hint.menuUpgrade',
+    menuHero: 'hint.menuHero',
   },
 
   seen(id) {
@@ -304,7 +297,7 @@ const Hints = {
   // in the menu a DOM toast.
   trigger(id, text) {
     if (!Progress.data || Game.tutorial || this.seen(id)) return false;
-    text = text || this.text[id];
+    text = text || (this.text[id] && t(this.text[id]));
     if (!text) return false;
     Progress.data.hints.push(id);
     Progress.save();
@@ -315,12 +308,10 @@ const Hints = {
   },
 
   skill(sk) {
-    this.trigger('skill', `Навык «${sk.name}» готов! ${tutTouch() ? 'Нажми круглую кнопку справа.' : 'Нажми E или пробел.'}`);
+    this.trigger('skill', t('hint.skill', { name: L(sk.name), how: t(tutTouch() ? 'hint.skillTouch' : 'hint.skillKeys') }));
   },
 
   manual() {
-    this.trigger('manual', tutTouch()
-      ? 'Ручной прицел: правый джойстик — прицел и огонь. Переключить можно в настройках.'
-      : 'Ручной прицел: мышь — прицел, левая кнопка — огонь. Переключить можно в настройках.');
+    this.trigger('manual', t(tutTouch() ? 'hint.manualTouch' : 'hint.manualMouse'));
   },
 };

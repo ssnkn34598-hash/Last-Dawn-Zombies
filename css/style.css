@@ -778,7 +778,7 @@ canvas.raven.big { width: 96px; height: 96px; display: block; margin: 0 auto -4p
 }
 .chest-row.ready { border-color: var(--amber); background: rgba(255, 181, 71, 0.08); }
 .chest-info { flex: 1; min-width: 0; }
-.chest-info b { display: block; font-size: 14px; }
+.chest-info b { display: block; font-size: 14px; overflow-wrap: anywhere; }
 .chest-info small { font-size: 12px; color: var(--muted); }
 .chest-info .bar { margin: 3px 0; height: 5px; }
 .chests .note { font-size: 11px; color: var(--muted); margin-top: auto; }
@@ -915,8 +915,10 @@ canvas.raven.big { width: 96px; height: 96px; display: block; margin: 0 auto -4p
 
 @media (max-height: 430px) {
   .hscroll.daily .dcard { width: 228px; padding: 8px 10px; gap: 4px; }
-  .chest-ico { width: 34px; height: 28px; }
-  .chest-info b { font-size: 13px; }
+  .chest-ico { width: 30px; height: 26px; }
+  .chest-row { gap: 6px; padding: 5px 6px; }
+  .chest-row .btn.small { padding: 0 8px; }
+  .chest-info b { font-size: 12px; }
   .hscroll.daily .dcard.achievements { width: 280px; }
   .dtask { padding: 3px 6px; }
   .btn.small { min-height: 36px; }

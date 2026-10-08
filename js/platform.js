@@ -249,7 +249,7 @@ const Platform = {
   },
 };
 
-// Local stand-in for ads: a 2-second "Демо-реклама" window.
+// Local stand-in for ads: a 2-second "demo ad" window.
 const DemoAd = {
   show(kind, placement) {
     return new Promise(resolve => {
@@ -257,10 +257,10 @@ const DemoAd = {
       el.className = 'demo-ad';
       el.innerHTML = `
         <div class="demo-ad-box">
-          <div class="demo-ad-title">Демо-реклама</div>
-          <div class="demo-ad-sub">${kind === 'rewarded' ? 'Реклама за награду' : 'Реклама между уровнями'}${placement ? ` · ${placement}` : ''}</div>
+          <div class="demo-ad-title">${t('ad.demo')}</div>
+          <div class="demo-ad-sub">${t(kind === 'rewarded' ? 'ad.rewarded' : 'ad.interstitial')}${placement ? ` · ${placement}` : ''}</div>
           <div class="demo-ad-bar"><i></i></div>
-          <div class="demo-ad-note">В Яндекс Играх здесь будет настоящая реклама</div>
+          <div class="demo-ad-note">${t('ad.note')}</div>
         </div>`;
       document.body.appendChild(el);
       setTimeout(() => {

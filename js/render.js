@@ -1359,7 +1359,8 @@ const Render = {
     if (z.say.t > 0 && z.state !== 'rising') {
       ctx.globalAlpha = Math.min(1, z.say.t * 2);
       ctx.font = 'bold 14px "Trebuchet MS", Arial, sans-serif';
-      const tw = ctx.measureText(z.say.text).width + 20;
+      const sayText = L(z.say.text);
+      const tw = ctx.measureText(sayText).width + 20;
       const bx = z.x - tw / 2, by = z.y - z.air - r - 48;
       ctx.fillStyle = 'rgba(20,16,12,0.9)';
       this.roundRect(ctx, bx, by, tw, 26, 8); ctx.fill();
@@ -1367,7 +1368,7 @@ const Render = {
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.beginPath(); ctx.moveTo(z.x - 6, by + 26); ctx.lineTo(z.x, by + 34); ctx.lineTo(z.x + 6, by + 26); ctx.fill();
-      this.hudText(ctx, z.say.text, z.x, by + 14, '#ffcf7a', 14, 'center');
+      this.hudText(ctx, sayText, z.x, by + 14, '#ffcf7a', 14, 'center');
       ctx.textAlign = 'left';
       ctx.globalAlpha = 1;
     }
@@ -1564,7 +1565,7 @@ const Render = {
     const cx = view.w / 2;
     const bw = Math.max(260, Math.min(520, view.w - 620)), bh = 14;
     const bx = cx - bw / 2, by = 30;
-    const label = b.def.name + (b.rage ? ' · ЯРОСТЬ' : '');
+    const label = L(b.def.name) + (b.rage ? ' · ' + t('hud.rage') : '');
     this.hudText(ctx, label, cx, 16, b.rage ? '#ff3a2a' : '#ff7a5a', 16, 'center');
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     this.roundRect(ctx, bx - 3, by - 3, bw + 6, bh + 6, 6); ctx.fill();
@@ -1590,19 +1591,19 @@ const Render = {
   // ---------- Ending ----------
 
   drawEnding(ctx, game, view, input) {
-    const t = game.stateTime;
+    const et = game.stateTime;
     const cx = view.w / 2;
     ctx.save();
-    ctx.globalAlpha = Math.min(1, t / 2);
+    ctx.globalAlpha = Math.min(1, et / 2);
 
     // Night sky turning into dawn.
-    const p = Math.min(1, t / 22);
+    const p = Math.min(1, et / 22);
     const night = ctx.createLinearGradient(0, 0, 0, view.h);
     night.addColorStop(0, '#05060c');
     night.addColorStop(1, '#141826');
     ctx.fillStyle = night;
     ctx.fillRect(0, 0, view.w, view.h);
-    ctx.globalAlpha = Math.min(1, t / 2) * p;
+    ctx.globalAlpha = Math.min(1, et / 2) * p;
     const dawn = ctx.createLinearGradient(0, 0, 0, view.h);
     dawn.addColorStop(0, '#1a2244');
     dawn.addColorStop(0.55, '#7a4a6a');
@@ -1610,7 +1611,7 @@ const Render = {
     dawn.addColorStop(1, '#ffcf7a');
     ctx.fillStyle = dawn;
     ctx.fillRect(0, 0, view.w, view.h);
-    ctx.globalAlpha = Math.min(1, t / 2);
+    ctx.globalAlpha = Math.min(1, et / 2);
 
     // Sun
     const sy = view.h * 0.95 - p * view.h * 0.32;
@@ -1643,41 +1644,48 @@ const Render = {
     ctx.beginPath(); ctx.arc(cx - 155, view.h - 70, 8, 0, Math.PI * 2); ctx.fill();
 
     // Title and story lines
-    if (t > ENDING_TITLE_AT) {
-      ctx.globalAlpha = Math.min(1, (t - ENDING_TITLE_AT) / 1.5) * Math.max(0, Math.min(1, (ENDING_CREDITS_AT + 1 - t)));
-      this.hudText(ctx, ENDING.title, cx, 70, '#ffcf7a', 46, 'center');
+    if (et > ENDING_TITLE_AT) {
+      ctx.globalAlpha = Math.min(1, (et - ENDING_TITLE_AT) / 1.5) * Math.max(0, Math.min(1, (ENDING_CREDITS_AT + 1 - et)));
+      this.hudText(ctx, L(ENDING.title), cx, 70, '#ffcf7a', 46, 'center');
     }
-    ENDING.lines.forEach((line, i) => {
+    // Long lines wrap on narrow screens; each line starts below the previous one.
+    let ly = 140;
+    L(ENDING.lines).forEach((line, i) => {
       const at = ENDING_LINES_AT + i * ENDING_LINE_STEP;
-      if (t < at) return;
-      const fadeOut = Math.max(0, Math.min(1, ENDING_CREDITS_AT + 1 - t));
-      ctx.globalAlpha = Math.min(1, (t - at) / 1.2) * fadeOut;
-      this.hudText(ctx, line, cx, 140 + i * 34, '#f3e3c0', 19, 'center');
+      ctx.font = 'bold 19px "Trebuchet MS", Arial, sans-serif';
+      const rows = Math.ceil(ctx.measureText(line).width / (view.w - 80)) || 1;
+      if (et >= at) {
+        const fadeOut = Math.max(0, Math.min(1, ENDING_CREDITS_AT + 1 - et));
+        ctx.globalAlpha = Math.min(1, (et - at) / 1.2) * fadeOut;
+        this.wrapText(ctx, line, cx, ly, view.w - 80, 24, '#f3e3c0', 19, 'center');
+      }
+      ly += rows * 24 + 10;
     });
 
     // Credits roll
-    if (t > ENDING_CREDITS_AT && t < ENDING_CREDITS_END) {
-      const k = (t - ENDING_CREDITS_AT) / (ENDING_CREDITS_END - ENDING_CREDITS_AT);
+    if (et > ENDING_CREDITS_AT && et < ENDING_CREDITS_END) {
+      const k = (et - ENDING_CREDITS_AT) / (ENDING_CREDITS_END - ENDING_CREDITS_AT);
       const rowH = 64;
-      const totalH = ENDING.credits.length * rowH;
+      const credits = L(ENDING.credits);
+      const totalH = credits.length * rowH;
       const y0 = view.h + 20 - Math.min(1, k) * (view.h * 0.55 + totalH);
-      ENDING.credits.forEach(([role, name], i) => {
+      credits.forEach(([role, name], i) => {
         const y = y0 + i * rowH;
         if (y < -40 || y > view.h + 40) return;
-        ctx.globalAlpha = Math.max(0, Math.min(1, y / 80, (view.h - y) / 80, (ENDING_CREDITS_END - t) * 2));
+        ctx.globalAlpha = Math.max(0, Math.min(1, y / 80, (view.h - y) / 80, (ENDING_CREDITS_END - et) * 2));
         if (role) this.hudText(ctx, role, cx, y, name ? '#c8b898' : '#ffcf7a', name ? 15 : 26, 'center');
         if (name) this.hudText(ctx, name, cx, y + 24, '#f3e3c0', 20, 'center');
       });
     }
     ctx.restore();
 
-    if (t > ENDING_CREDITS_END) {
-      ctx.globalAlpha = Math.min(1, (t - ENDING_CREDITS_END) * 2);
-      this.hudText(ctx, 'Город спасён', cx, view.h * 0.42, '#ffd23a', 40, 'center');
-      this.button(ctx, 'endnext', cx - 100, view.h * 0.42 + 50, 200, 50, 'ДАЛЕЕ', '#ffb547', true);
+    if (et > ENDING_CREDITS_END) {
+      ctx.globalAlpha = Math.min(1, (et - ENDING_CREDITS_END) * 2);
+      this.hudText(ctx, t('hud.citySaved'), cx, view.h * 0.42, '#ffd23a', 40, 'center');
+      this.button(ctx, 'endnext', cx - 100, view.h * 0.42 + 50, 200, 50, t('hud.next'), '#ffb547', true);
       ctx.globalAlpha = 1;
-    } else if (t > 1) {
-      this.button(ctx, 'skip', view.w - 170, 16, 150, 38, 'Пропустить ›', '#c8b898');
+    } else if (et > 1) {
+      this.button(ctx, 'skip', view.w - 170, 16, 150, 38, t('hud.skip'), '#c8b898');
     }
     ctx.textAlign = 'left';
   },
@@ -1741,7 +1749,7 @@ const Render = {
       ctx.beginPath(); ctx.arc(cx, cy, r - 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - sk.t / sk.cd)); ctx.stroke();
     }
     this.hudText(ctx, this.skillIcon[sk.id] || '★', cx, cy - 3, ready ? '#ffe2a0' : 'rgba(255,226,160,0.4)', 26, 'center');
-    this.hudText(ctx, ready ? sk.name : String(Math.ceil(sk.t)), cx, cy + 20, ready ? '#ffcf7a' : '#c8b898', ready ? 10 : 13, 'center');
+    this.hudText(ctx, ready ? L(sk.name) : String(Math.ceil(sk.t)), cx, cy + 20, ready ? '#ffcf7a' : '#c8b898', ready ? 10 : 13, 'center');
     if (!input.touch) this.hudText(ctx, 'E', cx + r - 2, cy - r + 4, 'rgba(255,255,255,0.5)', 12, 'center');
     ctx.textAlign = 'left';
   },
@@ -1992,7 +2000,7 @@ const Render = {
     this.roundRect(ctx, sx, 12, sw, pb, 10); ctx.fill();
     ctx.strokeStyle = 'rgba(200,184,152,0.6)';
     ctx.stroke();
-    this.hudText(ctx, 'Пропустить обучение', sx + sw / 2, 12 + pb / 2 + 1, '#c8b898', 14, 'center');
+    this.hudText(ctx, t('hud.skipTutorial'), sx + sw / 2, 12 + pb / 2 + 1, '#c8b898', 14, 'center');
     this.drawSkillButton(ctx, game, view, input);
 
     // Hint box
@@ -2015,7 +2023,7 @@ const Render = {
     ctx.lineWidth = 2;
     ctx.stroke();
     this.drawRaven(ctx, x + 38, 10 + hgt / 2, 1.15, game.time);
-    this.hudText(ctx, `ВОРОН · ШАГ ${tut.step + 1}/${TUTORIAL_STEPS}`, x + 76, 26, '#ffb547', 12);
+    this.hudText(ctx, t('hud.ravenStep', { n: tut.step + 1, total: TUTORIAL_STEPS }), x + 76, 26, '#ffb547', 12);
     this.wrapText(ctx, text, x + 76, 46, w - 92, 19, '#f3e3c0', 15);
     // Step dots
     for (let i = 0; i < TUTORIAL_STEPS; i++) {
@@ -2146,11 +2154,11 @@ const Render = {
     this.roundRect(ctx, bx - 2, xy - 2, bw + 4, 12, 5); ctx.fill();
     ctx.fillStyle = '#5ad8ff';
     this.roundRect(ctx, bx, xy, Math.max(4, bw * Math.min(1, h.xp / need)), 8, 4); ctx.fill();
-    this.hudText(ctx, `УР. ${h.lvl}`, bx + bw + 10, xy + 4, '#5ad8ff', 14);
+    this.hudText(ctx, t('hud.lvl', { n: h.lvl }), bx + bw + 10, xy + 4, '#5ad8ff', 14);
 
     this.hudText(ctx, `● ${h.coins}`, bx, xy + 28, '#ffd23a', 17);
     this.hudText(ctx, `☠ ${game.kills}`, bx + 90, xy + 28, '#d8d0c0', 17);
-    this.hudText(ctx, game.tutorial ? 'Обучение' : `Уровень ${game.level} · ${game.district.name}`, bx, xy + 52, game.district.accent, 13);
+    this.hudText(ctx, game.tutorial ? t('hud.tutorial') : t('levelDistrict', { n: game.level, district: L(game.district.name) }), bx, xy + 52, game.district.accent, 13);
 
     // Perks taken (bottom-left)
     let px = bx + 14;
@@ -2180,15 +2188,15 @@ const Render = {
     if (this.drawBossBar(ctx, game, view)) {
       // Boss bar replaces the wave label.
     } else if (game.waveIndex >= 0) {
-      this.hudText(ctx, `ВОЛНА ${game.waveIndex + 1}/${waves}`, cx, 22, '#ffcf7a', 20, 'center');
+      this.hudText(ctx, t('hud.wave', { n: game.waveIndex + 1, total: waves }), cx, 22, '#ffcf7a', 20, 'center');
       const sub = game.waveBreak > 0
-        ? `Следующая волна через ${Math.ceil(game.waveBreak)}`
-        : `Осталось зомби: ${game.remaining}`;
+        ? t('hud.nextWave', { n: Math.ceil(game.waveBreak) })
+        : t('hud.left', { n: game.remaining });
       this.hudText(ctx, sub, cx, 44, '#d8ccb0', 13, 'center');
     }
     const s = game.streak;
     if (s.count >= 2) {
-      this.hudText(ctx, `СЕРИЯ ×${s.count}`, cx, 70, '#ff8a4a', 20, 'center');
+      this.hudText(ctx, t('hud.streak', { n: s.count }), cx, 70, '#ff8a4a', 20, 'center');
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(cx - 50, 84, 100, 4);
       ctx.fillStyle = '#ff8a4a';
@@ -2229,7 +2237,7 @@ const Render = {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     this.roundRect(ctx, rx, ay, pw, 30, 8); ctx.fill();
     const auto = game.aimMode === 'auto';
-    this.hudText(ctx, auto ? 'Прицел: АВТО' : 'Прицел: РУЧНОЙ', rx + 12, ay + 16, auto ? '#8fd8ff' : '#ffb547', 14);
+    this.hudText(ctx, t(auto ? 'hud.aimAuto' : 'hud.aimManual'), rx + 12, ay + 16, auto ? '#8fd8ff' : '#ffb547', 14);
     if (!input.touch) this.hudText(ctx, 'M', rx + pw - 12, ay + 16, 'rgba(255,255,255,0.5)', 13, 'right');
 
     const w = game.weapon;
@@ -2240,7 +2248,7 @@ const Render = {
     ctx.strokeStyle = w.color;
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    this.hudText(ctx, game.debug ? `${(h.weapon + 1) % 10}  ${w.name}` : w.name, rx + 12, wy + 16, w.color, 15);
+    this.hudText(ctx, game.debug ? `${(h.weapon + 1) % 10}  ${L(w.name)}` : L(w.name), rx + 12, wy + 16, w.color, 15);
     const cd = Math.max(0, Math.min(1, h.cooldown * w.rate * h.stats.rate));
     if (cd > 0 && w.rate < 2) {
       ctx.fillStyle = w.color;
@@ -2251,8 +2259,8 @@ const Render = {
 
     if (game.debug) {
       const hint = input.touch
-        ? 'debug: тап по оружию — следующее'
-        : 'debug: 1–9, 0 — оружие · M — прицел';
+        ? t('hud.debugTouch')
+        : t('hud.debugKeys');
       this.hudText(ctx, hint, view.w / 2, view.h - 14, 'rgba(243,227,192,0.55)', 12, 'center');
     }
     ctx.textAlign = 'left';
@@ -2307,8 +2315,8 @@ const Render = {
     const def = ZOMBIES[type];
     const w = 560, h = 330, x = cx - w / 2, y = (view.h - h) / 2;
     this.panel(ctx, x, y, w, h, '#ff5a4a');
-    this.hudText(ctx, 'НОВЫЙ ВРАГ', cx, y + 34, '#ff5a4a', 28, 'center');
-    this.hudText(ctx, `Уровень ${game.level} · ${game.district.name}`, cx, y + 62, '#a89878', 13, 'center');
+    this.hudText(ctx, t('hud.newEnemy'), cx, y + 34, '#ff5a4a', 28, 'center');
+    this.hudText(ctx, t('levelDistrict', { n: game.level, district: L(game.district.name) }), cx, y + 62, '#a89878', 13, 'center');
 
     // Portrait
     const px = x + 120, py = y + 160;
@@ -2328,18 +2336,18 @@ const Render = {
     ctx.restore();
 
     const tx = x + 240;
-    this.hudText(ctx, def.name, tx, y + 108, '#ffcf7a', 30);
-    this.wrapText(ctx, def.desc, tx, y + 146, w - 270, 22, '#e8dcc0', 16);
-    const stat = `Здоровье ${def.hp} · Скорость ${def.speed} · Урон ${def.damage}`;
+    this.hudText(ctx, L(def.name), tx, y + 108, '#ffcf7a', 30);
+    this.wrapText(ctx, L(def.desc), tx, y + 146, w - 270, 22, '#e8dcc0', 16);
+    const stat = t('hud.enemyStats', { hp: def.hp, speed: def.speed, dmg: def.damage });
     this.hudText(ctx, stat, tx, y + 230, '#a89878', 12);
 
-    this.button(ctx, 'start', cx - 100, y + h - 66, 200, 48, 'В БОЙ', '#ffb547', true);
+    this.button(ctx, 'start', cx - 100, y + h - 66, 200, 48, t('hud.fight'), '#ffb547', true);
     if (!input.touch) this.hudText(ctx, 'Enter', cx + 112, y + h - 42, 'rgba(255,255,255,0.4)', 12);
   },
 
   drawPerks(ctx, game, view, cx, input) {
-    this.hudText(ctx, `УРОВЕНЬ ${game.hero.lvl}!`, cx, view.h * 0.14, '#5ad8ff', 34, 'center');
-    this.hudText(ctx, 'Выбери улучшение', cx, view.h * 0.14 + 34, '#e8dcc0', 16, 'center');
+    this.hudText(ctx, t('hud.levelUp', { n: game.hero.lvl }), cx, view.h * 0.14, '#5ad8ff', 34, 'center');
+    this.hudText(ctx, t('hud.pickPerk'), cx, view.h * 0.14 + 34, '#e8dcc0', 16, 'center');
     const n = game.perkChoices.length;
     const cw = Math.min(240, (view.w - 60) / 3 - 16), ch = 270, gap = 18;
     const total = n * cw + (n - 1) * gap;
@@ -2356,8 +2364,8 @@ const Render = {
       ctx.lineWidth = 3;
       ctx.stroke();
       this.hudText(ctx, perk.icon, x + cw / 2, yy + 60, perk.color, 34, 'center');
-      const lines = this.wrapText(ctx, perk.name, x + cw / 2, yy + 118, cw - 20, 22, '#ffcf7a', 19, 'center');
-      this.wrapText(ctx, perk.desc, x + cw / 2, yy + 124 + lines * 22, cw - 24, 19, '#e8dcc0', 14, 'center');
+      const lines = this.wrapText(ctx, L(perk.name), x + cw / 2, yy + 118, cw - 20, 22, '#ffcf7a', 19, 'center');
+      this.wrapText(ctx, L(perk.desc), x + cw / 2, yy + 124 + lines * 22, cw - 24, 19, '#e8dcc0', 14, 'center');
       // Stack pips
       const have = game.perks[perk.id] || 0;
       for (let k = 0; k < perk.max; k++) {
@@ -2376,7 +2384,7 @@ const Render = {
       ctx.strokeStyle = '#5ad8a0';
       ctx.lineWidth = 2;
       ctx.stroke();
-      this.hudText(ctx, '⟳ Другие варианты  ▶ реклама', cx, by + bh / 2 + 1, '#8af0c0', 16, 'center');
+      this.hudText(ctx, t('hud.reroll'), cx, by + bh / 2 + 1, '#8af0c0', 16, 'center');
     }
   },
 

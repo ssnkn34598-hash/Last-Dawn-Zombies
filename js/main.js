@@ -233,7 +233,7 @@ function frame(now) {
     // Waiting for the platform (SDK, cloud save).
     ctx.fillStyle = '#07090d';
     ctx.fillRect(0, 0, view.w, view.h);
-    Render.hudText(ctx, 'Загрузка…', view.w / 2, view.h / 2, '#ffcf7a', 26, 'center');
+    Render.hudText(ctx, t('loading'), view.w / 2, view.h / 2, '#ffcf7a', 26, 'center');
     requestAnimationFrame(frame);
     return;
   }
@@ -254,6 +254,8 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
 Game.touch = isTouch;
+// Browser language until the SDK and the save are loaded.
+I18N.setLang(I18N.detect());
 canvas.style.cursor = 'crosshair';
 requestAnimationFrame(t => { last = t; frame(t); });
 

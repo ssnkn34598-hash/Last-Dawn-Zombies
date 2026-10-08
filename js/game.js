@@ -3,7 +3,7 @@
 const BORDER = 48;          // barricade thickness along the arena edge
 const HERO_RADIUS = 16;
 const STREAK_TIME = 3;      // seconds between kills before a streak resets
-const STREAK_MILESTONES = { 5: 'Неплохо!', 10: 'Мясорубка!', 20: 'Неудержимый!', 35: 'Зачистка!', 50: 'Легенда района!', 100: 'Последний рассвет!' };
+const STREAK_MILESTONES = [5, 10, 20, 35, 50, 100]; // texts: streak.N in i18n.js
 
 // Small seeded RNG so a level always gets the same layout.
 function makeRng(seed) {
@@ -115,7 +115,7 @@ const WAVE_BREAK = 2.5;
 const ENDING_TITLE_AT = 1;
 const ENDING_LINES_AT = 3.5;
 const ENDING_LINE_STEP = 2.6;
-const ENDING_CREDITS_AT = ENDING_LINES_AT + ENDING.lines.length * ENDING_LINE_STEP + 1.5;
+const ENDING_CREDITS_AT = ENDING_LINES_AT + ENDING.lines.ru.length * ENDING_LINE_STEP + 1.5;
 const ENDING_CREDITS_END = ENDING_CREDITS_AT + 14;
 
 function baseStats() {
@@ -256,7 +256,7 @@ const Game = {
     // One-time hints for a weapon used for the first time and for manual aim.
     if (typeof Hints !== 'undefined') {
       const w = this.weapon;
-      if (w.id !== 'pistol') Hints.trigger('weapon_' + w.id, `Новое оружие: ${w.name}. ${w.desc}`);
+      if (w.id !== 'pistol') Hints.trigger('weapon_' + w.id, t('hint.weapon', { name: L(w.name), desc: L(w.desc) }));
       if (this.aimMode === 'manual') Hints.manual();
     }
   },
@@ -401,7 +401,7 @@ const Game = {
       }
     }
     Bosses.shots.length = 0;
-    this.banner('ВТОРОЙ ШАНС', '#7aff8a', 1.6);
+    this.banner(t('ban.secondChance'), '#7aff8a', 1.6);
   },
 
   // New perk options after a rewarded ad (once per level).
@@ -454,12 +454,12 @@ const Game = {
     if (i < 0 || i >= WEAPONS.length) return;
     this.hero.weapon = i;
     this.hero.cooldown = 0;
-    this.banner(WEAPONS[i].name, '#ffcf7a', 1);
+    this.banner(L(WEAPONS[i].name), '#ffcf7a', 1);
   },
 
   toggleAim() {
     this.aimMode = this.aimMode === 'auto' ? 'manual' : 'auto';
-    this.banner(this.aimMode === 'auto' ? 'Прицел: АВТО' : 'Прицел: РУЧНОЙ', '#8fd8ff', 1);
+    this.banner(t(this.aimMode === 'auto' ? 'hud.aimAuto' : 'hud.aimManual'), '#8fd8ff', 1);
   },
 
   banner(text, color, life = 1.6, sub = '', big = false) {
@@ -709,8 +709,8 @@ const Game = {
     this.waveTimer = wave.boss ? 4 : 1;
     const total = this.config.waves.length;
     const last = i === total - 1;
-    const sub = wave.boss ? 'Идёт босс!' : last ? 'Последняя волна!' : '';
-    this.banner(`ВОЛНА ${i + 1}/${total}`, last ? '#ff5a4a' : '#ffcf7a', 2.2, sub, true);
+    const sub = wave.boss ? t('ban.bossComing') : last ? t('ban.lastWave') : '';
+    this.banner(t('ban.wave', { n: i + 1, total }), last ? '#ff5a4a' : '#ffcf7a', 2.2, sub, true);
     if (wave.boss) this.bossPending = 2.2;
   },
 
@@ -764,10 +764,10 @@ const Game = {
         // Pull all loot in before the victory screen.
         this.victoryDelay = this.finalWon ? 3 : 1.4;
         for (const p of this.pickups) p.magnet = true;
-        this.banner('РАЙОН ЗАЧИЩЕН', '#7aff8a', 1.6, '', true);
+        this.banner(t('ban.cleared'), '#7aff8a', 1.6, '', true);
       } else {
         this.waveBreak = WAVE_BREAK;
-        this.banner('Волна отбита', '#a8e08a', 1.4, 'передышка');
+        this.banner(t('ban.waveDone'), '#a8e08a', 1.4, t('ban.breather'));
       }
     }
   },
@@ -793,7 +793,7 @@ const Game = {
     if (this.tutorial) return [];
     const h = this.hero;
     const done = this.state === 'victory';
-    const list = [{ text: 'Победить', state: done ? 'ok' : this.state === 'defeat' ? 'fail' : 'pending', progress: '' }];
+    const list = [{ text: t('goal.win'), state: done ? 'ok' : this.state === 'defeat' ? 'fail' : 'pending', progress: '' }];
     for (const g of this.config.stars) {
       const v = g.value;
       let state, progress;
@@ -820,7 +820,10 @@ const Game = {
           break;
       }
       if (this.state === 'defeat') state = 'fail';
-      list.push({ text: STAR_GOALS[g.type].text(v), state, progress });
+      const text = g.type === 'time'
+        ? t('goal.time', { time: `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}` })
+        : t('goal.' + g.type, { v });
+      list.push({ text, state, progress });
     }
     return list;
   },
@@ -915,7 +918,7 @@ const Game = {
           const a = Math.random() * Math.PI * 2, d = i === 0 ? 0 : 70 + Math.random() * 190;
           this.strikes.push({ x: c.x + Math.cos(a) * d, y: c.y + Math.sin(a) * d, t: 0.8 + i * 0.17, max: 0.8 + i * 0.17, r: 95, dmg: 110 * p });
         }
-        this.banner('АВИАУДАР', '#ff7a3a', 1.2);
+        this.banner(t('ban.airstrike'), '#ff7a3a', 1.2);
         break;
       }
       case 'freeze':
@@ -1134,7 +1137,7 @@ const Game = {
     this.perkChoices = [];
     this.setState('play');
     this.hero.invuln = Math.max(this.hero.invuln, 0.6);
-    this.banner(perk.name, perk.color, 1.4);
+    this.banner(L(perk.name), perk.color, 1.4);
   },
 
   applyPerk(id) {
@@ -1285,8 +1288,8 @@ const Game = {
     s.timer = STREAK_TIME;
     s.best = Math.max(s.best, s.count);
     this.stat('streak', s.count);
-    if (STREAK_MILESTONES[s.count]) {
-      this.banner(`СЕРИЯ ×${s.count}`, '#ff7a3a', 1.8, STREAK_MILESTONES[s.count]);
+    if (STREAK_MILESTONES.includes(s.count)) {
+      this.banner(t('hud.streak', { n: s.count }), '#ff7a3a', 1.8, t('streak.' + s.count));
       Fx.addShake(4);
       if (s.count === 10 && typeof Hints !== 'undefined') Hints.trigger('streak');
     }

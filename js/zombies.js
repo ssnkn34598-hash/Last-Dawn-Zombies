@@ -43,7 +43,7 @@ const Zombies = {
     };
     game.zombies.push(z);
     if (game.config && type === game.config.newEnemy && type !== 'walker' && typeof Hints !== 'undefined') {
-      Hints.trigger('enemy_' + type, `Вот он — ${def.name}! ${def.desc}`);
+      Hints.trigger('enemy_' + type, t('hint.enemy', { name: L(def.name), desc: L(def.desc) }));
     }
     Fx.burst(x, y, 12, { speed: 120, life: 0.6, size: 4, color: ['#3b2f22', '#4a3a28', '#2a2118'], kind: 'dirt' });
     Render.crack(x, y, z.r);
@@ -119,7 +119,7 @@ const Zombies = {
             z.screaming = 0.5;
             Fx.ring(z.x, z.y, z.def.screamRadius, '#d6a0ff', 0.6, 4);
             Fx.ring(z.x, z.y, z.def.screamRadius * 0.6, '#d6a0ff', 0.45, 3);
-            Fx.text(z.x, z.y - z.r - 10, 'А-А-А!', '#e2c0ff', 14);
+            Fx.text(z.x, z.y - z.r - 10, t('ban.scream'), '#e2c0ff', 14);
             for (const o of zs) {
               if (o !== z && o.state === 'alive' && Math.hypot(o.x - z.x, o.y - z.y) < z.def.screamRadius) o.haste = 3;
             }

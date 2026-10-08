@@ -57,7 +57,7 @@ const Bosses = {
     };
     game.zombies.push(z);
     game.boss = z;
-    game.banner(def.name, '#ff5a4a', 3.4, `«${def.phrase}»`, true);
+    game.banner(L(def.name), '#ff5a4a', 3.4, I18N.quote(L(def.phrase)), true);
     Fx.burst(x, y, 30, { speed: 220, life: 0.9, size: 6, color: ['#3b2f22', '#4a3a28', '#2a2118'], kind: 'dirt' });
     Render.crack(x, y, z.r * 1.6);
     Fx.addShake(10);
@@ -138,7 +138,7 @@ const Bosses = {
   enrage(game, z, phrase) {
     z.rage = true;
     z.say = { text: phrase, t: 3 };
-    game.banner('ЯРОСТЬ!', '#ff3a2a', 2.2, `«${phrase}»`, true);
+    game.banner(t('ban.rage'), '#ff3a2a', 2.2, I18N.quote(L(phrase)), true);
     Fx.ring(z.x, z.y, 160, '#ff3a2a', 0.6, 8);
     Fx.addShake(8);
     if (typeof Hints !== 'undefined') Hints.trigger('rage');
@@ -493,7 +493,7 @@ const Bosses = {
       z.burn = null;
       const phrase = z.def.phasePhrases[z.phase - 1];
       z.say = { text: phrase, t: 3.5 };
-      game.banner(`ФАЗА ${z.phase + 1}/${z.phases}`, '#ff3a2a', 2.8, `«${phrase}»`, true);
+      game.banner(t('ban.phase', { n: z.phase + 1, total: z.phases }), '#ff3a2a', 2.8, I18N.quote(L(phrase)), true);
       Fx.ring(z.x, z.y, 260, '#ff3a2a', 0.7, 10);
       Fx.addShake(16);
       this.shots.length = 0;
@@ -530,7 +530,7 @@ const Bosses = {
       const a = Math.random() * Math.PI * 2, sp = 100 + Math.random() * 200;
       game.pickups.push({ kind: 'coin', value: 3, x: z.x, y: z.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: DROPS.lifetime, magnet: false, bob: Math.random() * 6 });
     }
-    game.banner('БОСС ПОВЕРЖЕН!', '#ffd23a', 2.6, z.def.name, true);
+    game.banner(t('ban.bossDown'), '#ffd23a', 2.6, L(z.def.name), true);
     if (z.phases > 1) game.finalWon = true;
   },
 };

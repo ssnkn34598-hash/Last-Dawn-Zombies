@@ -177,16 +177,13 @@ const Progress = {
 const AD_COINS_COOLDOWN = 5 * 60 * 1000;
 
 const TABS = [
-  { id: 'battle',  name: 'Бой',     icon: '⚔' },
-  { id: 'map',     name: 'Карта',   icon: '⌂' },
-  { id: 'arsenal', name: 'Арсенал', icon: '⌖' },
-  { id: 'heroes',  name: 'Герои',   icon: '☺' },
-  { id: 'quests',  name: 'Задания', icon: '✓' },
+  { id: 'battle',  icon: '⚔' },
+  { id: 'map',     icon: '⌂' },
+  { id: 'arsenal', icon: '⌖' },
+  { id: 'heroes',  icon: '☺' },
+  { id: 'quests',  icon: '✓' },
 ];
 
-const WEAPON_TYPE_NAMES = {
-  bullet: 'Пули', bolt: 'Болты', flame: 'Огонь', grenade: 'Гранаты', tesla: 'Молния', plasma: 'Плазма', rocket: 'Ракеты',
-};
 
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -206,6 +203,7 @@ const UI = {
 
   init() {
     Progress.load();
+    I18N.setLang(I18N.detect(Progress.data.settings.lang));
     Daily.check();
     setInterval(() => this.tick(), 1000);
     Game.aimMode = Progress.data.settings.aim;
@@ -214,11 +212,11 @@ const UI = {
     Game.hooks.victory = r => this.onVictory(r);
     Game.hooks.defeat = r => this.onDefeat(r);
     Game.hooks.pause = () => this.showPause();
-    Game.hooks.rerollAd = () => Platform.showRewarded('Другие улучшения').then(ok => {
+    Game.hooks.rerollAd = () => Platform.showRewarded(t('ad.perks')).then(ok => {
       if (ok) Game.rerollPerks();
     });
     Game.hooks.tutorialDone = () => this.onTutorialDone();
-    Game.hooks.tutorialSkip = () => this.confirm('Пропустить обучение?', 'Его можно пройти позже: Настройки → «Пройти обучение».', () => {
+    Game.hooks.tutorialSkip = () => this.confirm(t('tut.skipTitle'), t('tut.skipText'), () => {
       Progress.data.tutorialOffered = true;
       Progress.save();
       this.showMenu();
@@ -234,19 +232,19 @@ const UI = {
     this.root.innerHTML = `
       <div id="menu" class="hidden">
         <header class="topbar">
-          <div class="logo">Последний <span>рассвет</span></div>
+          <div class="logo" data-i18n-html="logo"></div>
           <div class="wallet">
-            <div class="chip coins" title="Монеты"><b>●</b><span data-bind="coins"></span></div>
-            <div class="chip gold" title="Золото"><b>◆</b><span data-bind="gold"></span></div>
-            <div class="chip stars" title="Звёзды"><b>★</b><span data-bind="stars"></span></div>
-            ${Game.debug ? '<button class="btn small debug" data-action="shift-day">+1 день</button>' : ''}
-            <button class="icon-btn" data-action="sound" title="Звук"><span data-bind="sound"></span></button>
-            <button class="icon-btn" data-action="settings" title="Настройки">⚙</button>
+            <div class="chip coins" data-i18n-title="chip.coins"><b>●</b><span data-bind="coins"></span></div>
+            <div class="chip gold" data-i18n-title="chip.gold"><b>◆</b><span data-bind="gold"></span></div>
+            <div class="chip stars" data-i18n-title="chip.stars"><b>★</b><span data-bind="stars"></span></div>
+            ${Game.debug ? '<button class="btn small debug" data-action="shift-day" data-i18n="debug.shiftDay"></button>' : ''}
+            <button class="icon-btn" data-action="sound" data-i18n-title="btn.sound"><span data-bind="sound"></span></button>
+            <button class="icon-btn" data-action="settings" data-i18n-title="btn.settings">⚙</button>
           </div>
         </header>
         <main class="content" id="tab-content"></main>
         <nav class="tabbar">
-          ${TABS.map(t => `<button class="tab" data-tab="${t.id}"><i>${t.icon}</i><span>${t.name}</span></button>`).join('')}
+          ${TABS.map(tab => `<button class="tab" data-tab="${tab.id}"><i>${tab.icon}</i><span data-i18n="tab.${tab.id}"></span></button>`).join('')}
         </nav>
       </div>
       <div id="toast" class="toast hidden"><canvas class="raven" data-raven="1"></canvas><span></span></div>
@@ -311,12 +309,12 @@ const UI = {
       cls: 'tutorial-offer',
       html: `
         <canvas class="raven big" data-raven="1"></canvas>
-        <h2>Привет, я Ворон</h2>
-        <p>Город захватили мертвецы. Я покажу, как здесь выжить: 8 коротких шагов, пара минут.</p>
-        <p class="hint">За обучение — награда: ● ${ECONOMY.tutorialReward.coins} и ◆ ${ECONOMY.tutorialReward.gold}.</p>
+        <h2>${t('tut.offerTitle')}</h2>
+        <p>${t('tut.offerText')}</p>
+        <p class="hint">${t('tut.offerReward', ECONOMY.tutorialReward)}</p>
         <div class="buttons">
-          <button class="btn" data-action="skip">Пропустить</button>
-          <button class="btn primary" data-action="learn">Пройти обучение</button>
+          <button class="btn" data-action="skip">${t('tut.skip')}</button>
+          <button class="btn primary" data-action="learn">${t('tut.learn')}</button>
         </div>`,
     });
     const mark = () => { Progress.data.tutorialOffered = true; Progress.save(); };
@@ -352,10 +350,10 @@ const UI = {
       cls: 'tutorial-offer',
       html: `
         <canvas class="raven big" data-raven="1"></canvas>
-        <h2>Обучение пройдено!</h2>
-        <p>Теперь ты готов. Дальше — Окраина и первые волны. Я буду подсказывать по пути.</p>
-        ${first ? `<div class="rewards"><span class="coins">● +${r.coins}</span><span class="gold">◆ +${r.gold}</span></div>` : '<p class="hint">Награда уже получена раньше.</p>'}
-        <div class="buttons"><button class="btn primary" data-action="ok">В бой!</button></div>`,
+        <h2>${t('tut.doneTitle')}</h2>
+        <p>${t('tut.doneText')}</p>
+        ${first ? `<div class="rewards"><span class="coins">● +${r.coins}</span><span class="gold">◆ +${r.gold}</span></div>` : `<p class="hint">${t('tut.doneAlready')}</p>`}
+        <div class="buttons"><button class="btn primary" data-action="ok">${t('tut.doneGo')}</button></div>`,
     });
     m.actions.ok = () => this.showMenu('battle');
   },
@@ -366,8 +364,16 @@ const UI = {
     document.getElementById('toast').classList.add('hidden');
   },
 
+  // Static shell texts (tabs, titles) follow the current language.
+  translateShell() {
+    this.root.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+    this.root.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+    this.root.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  },
+
   render() {
     const d = Progress.data;
+    this.translateShell();
     this.bind('coins', d.coins);
     this.bind('gold', d.gold);
     this.bind('stars', `${Progress.totalStars}/300`);
@@ -396,24 +402,24 @@ const UI = {
       <section class="battle">
         <div class="battle-hero card">
           <canvas class="portrait big" data-hero="${d.hero}"></canvas>
-          <div class="hero-name">${esc(h.name)} <small>ур. ${d.heroes[d.hero]}</small></div>
-          <div class="hero-skill">${esc(h.skill.name)}</div>
+          <div class="hero-name">${esc(L(h.name))} <small>${t('lvl.short', { n: d.heroes[d.hero] })}</small></div>
+          <div class="hero-skill">${esc(L(h.skill.name))}</div>
         </div>
         <div class="battle-main card glow">
-          <div class="district" style="--acc:${dist.accent}">${esc(dist.name)}</div>
-          <div class="level-title">Уровень ${level}</div>
-          ${boss ? `<div class="boss-badge">☠ Босс: ${esc(BOSSES[boss].name)}</div>` : `<div class="sub">★ ${Progress.districtStars(dist)} / ${(dist.levels[1] - dist.levels[0] + 1) * 3} в районе</div>`}
-          <button class="btn primary huge" data-action="play" data-level="${level}">ИГРАТЬ</button>
+          <div class="district" style="--acc:${dist.accent}">${esc(L(dist.name))}</div>
+          <div class="level-title">${t('level', { n: level })}</div>
+          ${boss ? `<div class="boss-badge">${t('battle.boss', { name: esc(L(BOSSES[boss].name)) })}</div>` : `<div class="sub">${t('battle.districtStars', { have: Progress.districtStars(dist), total: (dist.levels[1] - dist.levels[0] + 1) * 3 })}</div>`}
+          <button class="btn primary huge" data-action="play" data-level="${level}">${t('battle.play')}</button>
           <div class="loadout">
-            <button class="mini" data-tab="arsenal"><canvas class="weapon-icon" data-weapon="${w.id}"></canvas><span>${esc(w.name)} <small>ур. ${Progress.weaponLevel(w.id)}</small></span></button>
+            <button class="mini" data-tab="arsenal"><canvas class="weapon-icon" data-weapon="${w.id}"></canvas><span>${esc(L(w.name))} <small>${t('lvl.short', { n: Progress.weaponLevel(w.id) })}</small></span></button>
           </div>
         </div>
         <div class="battle-side card">
-          <div class="side-title">Впереди</div>
-          ${nextWeapon ? `<div class="teaser"><canvas class="weapon-icon" data-weapon="${nextWeapon.id}"></canvas><div><b>${esc(nextWeapon.name)}</b><small>откроется на ур. ${nextWeapon.unlock}</small></div></div>` : ''}
-          ${nextBoss ? `<div class="teaser boss"><i>☠</i><div><b>${esc(nextBoss.name)}</b><small>уровень ${nextBoss.level}</small></div></div>` : ''}
+          <div class="side-title">${t('battle.ahead')}</div>
+          ${nextWeapon ? `<div class="teaser"><canvas class="weapon-icon" data-weapon="${nextWeapon.id}"></canvas><div><b>${esc(L(nextWeapon.name))}</b><small>${t('battle.unlocksAt', { n: nextWeapon.unlock })}</small></div></div>` : ''}
+          ${nextBoss ? `<div class="teaser boss"><i>☠</i><div><b>${esc(L(nextBoss.name))}</b><small>${t('level', { n: nextBoss.level })}</small></div></div>` : ''}
           ${this.adCoinsTeaser()}
-          <button class="teaser" data-tab="quests"><i>✓</i><div><b>Задания дня</b><small>${d.daily.tasks.filter(t => t.claimed).length}/3 · ${Daily.rewardsWaiting() ? 'есть награды!' : 'испытание ждёт'}</small></div></button>
+          <button class="teaser" data-tab="quests"><i>✓</i><div><b>${t('battle.dailyTasks')}</b><small>${d.daily.tasks.filter(x => x.claimed).length}/3 · ${t(Daily.rewardsWaiting() ? 'battle.rewardsWaiting' : 'battle.challengeWaits')}</small></div></button>
         </div>
       </section>`;
     this.paintCanvases();
@@ -442,8 +448,8 @@ const UI = {
       return `
         <div class="district-block ${open ? '' : 'closed'}" style="--acc:${dist.accent}">
           <div class="district-head">
-            <b>${esc(dist.name)}</b>
-            <small>Уровни ${a}–${b} · ★ ${Progress.districtStars(dist)}/${(b - a + 1) * 3}</small>
+            <b>${esc(L(dist.name))}</b>
+            <small>${t('map.levels', { a, b, have: Progress.districtStars(dist), total: (b - a + 1) * 3 })}</small>
           </div>
           <div class="nodes">${nodes.join('')}</div>
         </div>`;
@@ -468,20 +474,20 @@ const UI = {
       const bar = (label, v) => `<div class="stat"><span>${label}</span><div class="bar"><i style="width:${Math.min(100, Math.round(v * 100))}%"></i></div></div>`;
       return `
         <div class="card item ${open ? '' : 'locked'} ${eq ? 'equipped' : ''}" style="--acc:${w.color}">
-          <div class="item-head"><b>${esc(w.name)}</b><small>${WEAPON_TYPE_NAMES[w.type]}</small></div>
+          <div class="item-head"><b>${esc(L(w.name))}</b><small>${t('wtype.' + w.type)}</small></div>
           <canvas class="weapon-art" data-weapon="${w.id}"></canvas>
           ${open ? `
-            <div class="item-level">Ур. ${lvl}/${ECONOMY.weaponMaxLevel}</div>
-            ${bar('Урон', dps / maxDmg)}
-            ${bar('Темп', w.rate / 20)}
-            ${bar('Дальность', w.range / 560)}
-            <div class="item-desc">${esc(w.desc)}</div>
+            <div class="item-level">${t('arsenal.level', { n: lvl, max: ECONOMY.weaponMaxLevel })}</div>
+            ${bar(t('arsenal.damage'), dps / maxDmg)}
+            ${bar(t('arsenal.rate'), w.rate / 20)}
+            ${bar(t('arsenal.range'), w.range / 560)}
+            <div class="item-desc">${esc(L(w.desc))}</div>
             <div class="item-actions">
-              ${eq ? '<span class="tag">В руках</span>' : `<button class="btn" data-action="equip" data-id="${w.id}">Взять</button>`}
-              ${max ? '<span class="tag">Макс.</span>' : `<button class="btn primary ${d.coins < cost ? 'disabled' : ''}" data-action="upgrade-weapon" data-id="${w.id}">▲ ● ${cost}</button>`}
+              ${eq ? `<span class="tag">${t('arsenal.inHands')}</span>` : `<button class="btn" data-action="equip" data-id="${w.id}">${t('arsenal.equip')}</button>`}
+              ${max ? `<span class="tag">${t('max')}</span>` : `<button class="btn primary ${d.coins < cost ? 'disabled' : ''}" data-action="upgrade-weapon" data-id="${w.id}">▲ ● ${cost}</button>`}
             </div>` : `
-            <div class="item-desc">${esc(w.desc)}</div>
-            <div class="lock-note">Откроется на уровне ${w.unlock}</div>`}
+            <div class="item-desc">${esc(L(w.desc))}</div>
+            <div class="lock-note">${t('arsenal.unlocksAt', { n: w.unlock })}</div>`}
         </div>`;
     }).join('');
     this.content.innerHTML = `<div class="hscroll">${cards}</div>`;
@@ -500,16 +506,16 @@ const UI = {
       const power = Math.round((ECONOMY.heroSkillPerLevel * (lvl - 1)) * 100);
       return `
         <div class="card item hero ${owned ? '' : 'locked'} ${sel ? 'equipped' : ''}" style="--acc:${h.color}">
-          <div class="item-head"><b>${esc(h.name)}</b><small>${esc(h.role)}</small></div>
+          <div class="item-head"><b>${esc(L(h.name))}</b><small>${esc(L(h.role))}</small></div>
           <canvas class="portrait" data-hero="${id}"></canvas>
-          <div class="skill-box"><b>${Render.skillIcon[h.skill.id]} ${esc(h.skill.name)}</b><small>${esc(h.skill.desc)}</small></div>
-          <div class="hero-stats"><span>♥ ${hp}</span><span>➤ ${h.speed}</span><span>⟳ ${h.skill.cd}с</span>${power ? `<span>+${power}%</span>` : ''}</div>
+          <div class="skill-box"><b>${Render.skillIcon[h.skill.id]} ${esc(L(h.skill.name))}</b><small>${esc(L(h.skill.desc))}</small></div>
+          <div class="hero-stats"><span>♥ ${hp}</span><span>➤ ${h.speed}</span><span>⟳ ${t('heroes.cdSec', { n: h.skill.cd })}</span>${power ? `<span>+${power}%</span>` : ''}</div>
           <div class="item-actions">
             ${owned ? `
-              ${sel ? '<span class="tag">Выбран</span>' : `<button class="btn" data-action="select-hero" data-id="${id}">Выбрать</button>`}
-              ${max ? '<span class="tag">Макс.</span>' : `<button class="btn primary ${d.coins < cost ? 'disabled' : ''}" data-action="upgrade-hero" data-id="${id}">▲ ● ${cost}</button>`}
-              <small class="lvl">ур. ${lvl}</small>` : `
-              <button class="btn gold ${d.gold < h.gold ? 'disabled' : ''}" data-action="buy-hero" data-id="${id}">Открыть ◆ ${h.gold}</button>`}
+              ${sel ? `<span class="tag">${t('heroes.selected')}</span>` : `<button class="btn" data-action="select-hero" data-id="${id}">${t('heroes.select')}</button>`}
+              ${max ? `<span class="tag">${t('max')}</span>` : `<button class="btn primary ${d.coins < cost ? 'disabled' : ''}" data-action="upgrade-hero" data-id="${id}">▲ ● ${cost}</button>`}
+              <small class="lvl">${t('lvl.short', { n: lvl })}</small>` : `
+              <button class="btn gold ${d.gold < h.gold ? 'disabled' : ''}" data-action="buy-hero" data-id="${id}">${t('heroes.unlock', { n: h.gold })}</button>`}
           </div>
         </div>`;
     }).join('');
@@ -523,28 +529,28 @@ const UI = {
     const rewardText = r => [r.coins ? `● ${r.coins}` : '', r.gold ? `◆ ${r.gold}` : ''].filter(Boolean).join(' ');
 
     // Daily tasks
-    const tasks = dd.tasks.map((t, i) => {
-      const def = Daily.taskDef(t);
-      const done = t.progress >= t.goal;
+    const tasks = dd.tasks.map((task, i) => {
+      const def = Daily.taskDef(task);
+      const done = task.progress >= task.goal;
       return `
-        <div class="dtask ${t.claimed ? 'claimed' : done ? 'ready' : ''}">
-          <div class="dt-text"><b>${esc(def.text(t.goal))}</b>
-            <div class="bar"><i style="width:${Math.round(t.progress / t.goal * 100)}%"></i></div>
+        <div class="dtask ${task.claimed ? 'claimed' : done ? 'ready' : ''}">
+          <div class="dt-text"><b>${esc(L(def.text, { n: task.goal }))}</b>
+            <div class="bar"><i style="width:${Math.round(task.progress / task.goal * 100)}%"></i></div>
           </div>
-          ${t.claimed ? '<span class="tag">✓</span>' : done
+          ${task.claimed ? '<span class="tag">✓</span>' : done
             ? `<button class="btn primary small" data-action="claim-task" data-id="${i}">${rewardText(def.reward)}</button>`
-            : `<small class="dt-num">${t.progress}/${t.goal}<br>${rewardText(def.reward)}</small>`}
+            : `<small class="dt-num">${task.progress}/${task.goal}<br>${rewardText(def.reward)}</small>`}
         </div>`;
     }).join('');
     const bonusReady = Daily.bonusReady();
     const bonus = `
       <div class="dtask bonus ${dd.bonusClaimed ? 'claimed' : bonusReady ? 'ready' : ''}">
-        <div class="dt-text"><b>Все три задания</b><small>${dd.tasks.filter(t => t.claimed).length}/3</small></div>
+        <div class="dt-text"><b>${t('daily.allThree')}</b><small>${dd.tasks.filter(x => x.claimed).length}/3</small></div>
         ${dd.bonusClaimed ? '<span class="tag">✓</span>' : `<button class="btn ${bonusReady ? 'primary' : 'disabled'} small" data-action="claim-bonus">${rewardText(DAILY_BONUS)}</button>`}
       </div>`;
 
     // Challenge of the day
-    const mods = Daily.challengeMods().map(m => `<div class="mod" style="--acc:${m.color}"><b>${esc(m.name)}</b><small>${esc(m.desc)}</small></div>`).join('');
+    const mods = Daily.challengeMods().map(m => `<div class="mod" style="--acc:${m.color}"><b>${esc(L(m.name))}</b><small>${esc(L(m.desc))}</small></div>`).join('');
 
     // Chests
     const freeLeft = Daily.freeChestLeft();
@@ -563,7 +569,7 @@ const UI = {
       const claimed = d.claimed.includes(q.id);
       return `
         <div class="dtask ${claimed ? 'claimed' : done ? 'ready' : ''}">
-          <div class="dt-text"><b>${esc(q.text)}</b>
+          <div class="dt-text"><b>${esc(L(q.text))}</b>
             <div class="bar"><i style="width:${Math.round(v / q.goal * 100)}%"></i></div>
           </div>
           ${claimed ? '<span class="tag">✓</span>' : done
@@ -575,37 +581,37 @@ const UI = {
     this.content.innerHTML = `
       <div class="hscroll daily">
         <div class="card dcard">
-          <div class="dhead"><b>Задания дня</b><small>новые через <span data-bind="day-left">${formatTime(Daily.msToNextDay())}</span></small></div>
+          <div class="dhead"><b>${t('daily.tasks')}</b><small>${t('daily.newIn', { time: `<span data-bind="day-left">${formatTime(Daily.msToNextDay())}</span>` })}</small></div>
           <div class="dlist">${tasks}${bonus}</div>
         </div>
         <div class="card dcard challenge">
-          <div class="dhead"><b>Испытание дня</b><small>Уровень ${dd.challengeLevel}</small></div>
+          <div class="dhead"><b>${t('daily.challenge')}</b><small>${t('level', { n: dd.challengeLevel })}</small></div>
           <div class="mods">${mods}</div>
-          <div class="ch-reward">Награда: <b>${rewardText(CHALLENGE_REWARD)}</b></div>
+          <div class="ch-reward">${t('daily.reward')} <b>${rewardText(CHALLENGE_REWARD)}</b></div>
           ${dd.challengeDone
-            ? '<div class="tag big">Пройдено ✓ — завтра новое</div>'
-            : '<button class="btn primary" data-action="challenge">Начать испытание</button>'}
+            ? `<div class="tag big">${t('daily.challengeDone')}</div>`
+            : `<button class="btn primary" data-action="challenge">${t('daily.challengeStart')}</button>`}
         </div>
         <div class="card dcard chests">
-          <div class="dhead"><b>Сундуки</b></div>
+          <div class="dhead"><b>${t('daily.chests')}</b></div>
           <div class="chest-row ${freeLeft <= 0 ? 'ready' : ''}">
             <div class="chest-ico free"><i></i></div>
-            <div class="chest-info"><b>Бесплатный</b><small>${freeLeft <= 0 ? 'Готов!' : `через <span data-bind="chest-left">${formatTime(freeLeft)}</span>`}</small></div>
+            <div class="chest-info"><b>${t('daily.freeChest')}</b><small>${freeLeft <= 0 ? t('ready') : t('in', { time: `<span data-bind="chest-left">${formatTime(freeLeft)}</span>` })}</small></div>
             ${freeLeft <= 0
-              ? '<button class="btn primary small" data-action="free-chest">Открыть</button>'
-              : '<button class="btn ad small" data-action="free-chest-ad">Сейчас ▶</button>'}
+              ? `<button class="btn primary small" data-action="free-chest">${t('open')}</button>`
+              : `<button class="btn ad small" data-action="free-chest-ad">${t('daily.chestNow')}</button>`}
           </div>
           <div class="chest-row ${starReady > 0 ? 'ready' : ''}">
             <div class="chest-ico star"><i></i></div>
-            <div class="chest-info"><b>Звёздный ${starReady > 1 ? `×${starReady}` : ''}</b>
+            <div class="chest-info"><b>${t('daily.starChest')} ${starReady > 1 ? `×${starReady}` : ''}</b>
               <div class="bar"><i style="width:${starReady > 0 ? 100 : Math.round(starProg / STAR_CHEST_EVERY * 100)}%"></i></div>
-              <small>${starReady > 0 ? 'Готов!' : `★ ${starProg}/${STAR_CHEST_EVERY}`}</small></div>
-            <button class="btn ${starReady > 0 ? 'primary' : 'disabled'} small" data-action="star-chest">Открыть</button>
+              <small>${starReady > 0 ? t('ready') : `★ ${starProg}/${STAR_CHEST_EVERY}`}</small></div>
+            <button class="btn ${starReady > 0 ? 'primary' : 'disabled'} small" data-action="star-chest">${t('open')}</button>
           </div>
-          <small class="note">Звёздный сундук — за каждые ${STAR_CHEST_EVERY} звёзд. Бесплатный — раз в ${FREE_CHEST_HOURS} часа.</small>
+          <small class="note">${t('daily.chestNote', { stars: STAR_CHEST_EVERY, hours: FREE_CHEST_HOURS })}</small>
         </div>
         <div class="card dcard achievements">
-          <div class="dhead"><b>Достижения</b></div>
+          <div class="dhead"><b>${t('daily.achievements')}</b></div>
           <div class="dlist vscroll">${quests}</div>
         </div>
       </div>`;
@@ -618,8 +624,8 @@ const UI = {
   adCoinsTeaser() {
     const left = (Progress.data.adCoinsAt || 0) - Date.now();
     return left > 0
-      ? `<div class="teaser"><i>●</i><div><b>Монеты за рекламу</b><small>через <span data-bind="adcoins-left">${formatTime(left)}</span></small></div></div>`
-      : `<button class="teaser ad" data-action="ad-coins"><i>▶</i><div><b>● +${this.adCoinsAmount()}</b><small>за просмотр рекламы</small></div></button>`;
+      ? `<div class="teaser"><i>●</i><div><b>${t('battle.adCoins')}</b><small>${t('in', { time: `<span data-bind="adcoins-left">${formatTime(left)}</span>` })}</small></div></div>`
+      : `<button class="teaser ad" data-action="ad-coins"><i>▶</i><div><b>● +${this.adCoinsAmount()}</b><small>${t('battle.adCoinsSub')}</small></div></button>`;
   },
 
   // ---------- Daily windows ----------
@@ -630,19 +636,19 @@ const UI = {
       const day = i + 1;
       const state = day < dd.streak ? 'past' : day === dd.streak ? 'today' : 'future';
       const what = r.chest
-        ? '<div class="lg-ico chest-ico free"><i></i></div><small>Сундук</small>'
+        ? `<div class="lg-ico chest-ico free"><i></i></div><small>${t('login.chest')}</small>`
         : `<div class="lg-ico">${r.gold ? '◆' : '●'}</div><small>${[r.coins ? `● ${r.coins}` : '', r.gold ? `◆ ${r.gold}` : ''].filter(Boolean).join(' ')}</small>`;
-      return `<div class="lg-day ${state} ${r.gold ? 'gold' : ''}"><b>День ${day}</b>${what}${state === 'past' ? '<em>✓</em>' : ''}</div>`;
+      return `<div class="lg-day ${state} ${r.gold ? 'gold' : ''}"><b>${t('login.day', { n: day })}</b>${what}${state === 'past' ? '<em>✓</em>' : ''}</div>`;
     }).join('');
     const m = this.modal({
       cls: 'login',
       html: `
-        <h2>Ежедневная награда</h2>
-        <p class="sub">${dd.streak > 1 ? `Ты заходишь ${dd.streak} дня подряд!` : 'Заходи каждый день — награды растут.'} Пропустишь день — счёт начнётся заново.</p>
+        <h2>${t('login.title')}</h2>
+        <p class="sub">${dd.streak > 1 ? t('login.streak', { n: dd.streak }) : t('login.first')} ${t('login.reset')}</p>
         <div class="lg-row">${cards}</div>
         <div class="buttons">
-          <button class="btn ad big" data-action="take2">×2 ▶ реклама</button>
-          <button class="btn primary big" data-action="take">Забрать</button>
+          <button class="btn ad big" data-action="take2">${t('login.double')}</button>
+          <button class="btn primary big" data-action="take">${t('take')}</button>
         </div>`,
     });
     const take = double => {
@@ -654,11 +660,11 @@ const UI = {
       this.closeModal(m);
       this.render();
       const shown = got && double ? { coins: (got.coins || 0) * 2, gold: (got.gold || 0) * 2 } : got;
-      if (got && (DAILY_LOGIN[dd.streak - 1].chest || double)) this.showChest(double ? 'Награда дня ×2' : 'Сундук дня', shown);
+      if (got && (DAILY_LOGIN[dd.streak - 1].chest || double)) this.showChest(t(double ? 'chest.dailyDouble' : 'chest.daily'), shown);
       else this.menuHints();
     };
     m.actions.take = () => take(false);
-    m.actions.take2 = () => Platform.showRewarded('×2 награда дня').then(ok => take(ok));
+    m.actions.take2 = () => Platform.showRewarded(t('ad.dailyDouble')).then(ok => take(ok));
   },
 
   showChest(title, loot) {
@@ -671,7 +677,7 @@ const UI = {
           ${loot.coins ? `<span class="coins">● +${loot.coins}</span>` : ''}
           ${loot.gold ? `<span class="gold">◆ +${loot.gold}</span>` : ''}
         </div>
-        <div class="buttons"><button class="btn primary" data-action="ok">Забрать</button></div>`,
+        <div class="buttons"><button class="btn primary" data-action="ok">${t('take')}</button></div>`,
       onEscape: () => close(),
     });
     const close = () => { this.closeModal(m); this.render(); };
@@ -790,31 +796,31 @@ const UI = {
         break;
       case 'free-chest': {
         const loot = Daily.openFreeChest();
-        if (loot) this.showChest('Бесплатный сундук', loot);
+        if (loot) this.showChest(t('chest.free'), loot);
         break;
       }
       case 'free-chest-ad':
-        Platform.showRewarded('Сундук без ожидания').then(ok => {
+        Platform.showRewarded(t('ad.chest')).then(ok => {
           if (!ok) return;
           d.chests.freeAt = 0;
           const loot = Daily.openFreeChest();
-          if (loot) this.showChest('Бесплатный сундук', loot);
+          if (loot) this.showChest(t('chest.free'), loot);
         });
         break;
       case 'ad-coins':
         if (Date.now() < (d.adCoinsAt || 0)) break;
-        Platform.showRewarded('Монеты').then(ok => {
+        Platform.showRewarded(t('ad.coins')).then(ok => {
           if (!ok) return;
           const amount = this.adCoinsAmount();
           d.coins += amount;
           d.adCoinsAt = Date.now() + AD_COINS_COOLDOWN;
           Progress.save();
-          this.showChest('Монеты за рекламу', { coins: amount });
+          this.showChest(t('chest.adCoins'), { coins: amount });
         });
         break;
       case 'star-chest': {
         const loot = Daily.openStarChest();
-        if (loot) this.showChest('Звёздный сундук', loot);
+        if (loot) this.showChest(t('chest.star'), loot);
         break;
       }
       case 'shift-day':
@@ -887,13 +893,21 @@ const UI = {
     const a = Progress.data.settings.aim;
     return `
       <div class="setting">
-        <span>Прицел</span>
+        <span>${t('settings.aim')}</span>
         <div class="segmented">
-          <button class="${a === 'auto' ? 'on' : ''}" data-action="aim-auto">Авто</button>
-          <button class="${a === 'manual' ? 'on' : ''}" data-action="aim-manual">Ручной</button>
+          <button class="${a === 'auto' ? 'on' : ''}" data-action="aim-auto">${t('settings.aimAuto')}</button>
+          <button class="${a === 'manual' ? 'on' : ''}" data-action="aim-manual">${t('settings.aimManual')}</button>
         </div>
       </div>
-      <p class="hint">${a === 'auto' ? 'Герой сам целится в ближайшего зомби и стреляет.' : ('ontouchstart' in window ? 'Правый джойстик — прицел и огонь.' : 'Мышь — прицел, левая кнопка — огонь.')}</p>`;
+      <p class="hint">${t(a === 'auto' ? 'settings.aimAutoHint' : ('ontouchstart' in window ? 'settings.aimTouchHint' : 'settings.aimMouseHint'))}</p>`;
+  },
+
+  setLang(lang, rerender) {
+    Progress.data.settings.lang = lang;
+    Progress.save();
+    I18N.setLang(lang);
+    rerender();
+    this.render();
   },
 
   setAim(mode, rerender) {
@@ -914,7 +928,9 @@ const UI = {
       'aim-auto': () => this.setAim('auto', re),
       'aim-manual': () => this.setAim('manual', re),
       'toggle-sound': () => { Progress.data.settings.sound = !Progress.data.settings.sound; Progress.save(); re(); this.render(); },
-      'reset': () => this.confirm('Сбросить весь прогресс?', 'Монеты, звёзды, оружие и герои пропадут.', () => {
+      'lang-ru': () => this.setLang('ru', re),
+      'lang-en': () => this.setLang('en', re),
+      'reset': () => this.confirm(t('settings.resetTitle'), t('settings.resetText'), () => {
         Progress.reset();
         Game.aimMode = Progress.data.settings.aim;
         Game.seenEnemies = new Set();
@@ -929,18 +945,25 @@ const UI = {
   settingsHtml() {
     const s = Progress.data.settings;
     return `
-      <h2>Настройки</h2>
+      <h2>${t('settings.title')}</h2>
       ${this.aimSwitch()}
       <div class="setting">
-        <span>Звук</span>
+        <span>${t('settings.sound')}</span>
         <div class="segmented">
-          <button class="${s.sound ? 'on' : ''}" data-action="toggle-sound">${s.sound ? 'Вкл' : 'Выкл'}</button>
+          <button class="${s.sound ? 'on' : ''}" data-action="toggle-sound">${t(s.sound ? 'settings.on' : 'settings.off')}</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span>${t('settings.lang')}</span>
+        <div class="segmented">
+          <button class="${I18N.lang === 'ru' ? 'on' : ''}" data-action="lang-ru">Русский</button>
+          <button class="${I18N.lang === 'en' ? 'on' : ''}" data-action="lang-en">English</button>
         </div>
       </div>
       <div class="buttons">
-        <button class="btn" data-action="tutorial">Пройти обучение</button>
-        <button class="btn danger" data-action="reset">Сбросить прогресс</button>
-        <button class="btn primary" data-action="close">Готово</button>
+        <button class="btn" data-action="tutorial">${t('settings.tutorial')}</button>
+        <button class="btn danger" data-action="reset">${t('settings.reset')}</button>
+        <button class="btn primary" data-action="close">${t('done')}</button>
       </div>`;
   },
 
@@ -949,7 +972,7 @@ const UI = {
     const m = this.modal({
       cls: 'confirm',
       html: `<h2>${esc(title)}</h2><p>${esc(text)}</p>
-        <div class="buttons"><button class="btn" data-action="no">Отмена</button><button class="btn danger" data-action="yes">Да</button></div>`,
+        <div class="buttons"><button class="btn" data-action="no">${t('cancel')}</button><button class="btn danger" data-action="yes">${t('yes')}</button></div>`,
       onEscape: cancel,
     });
     m.actions.no = cancel;
@@ -976,17 +999,17 @@ const UI = {
   pauseHtml() {
     const dist = Game.district;
     const where = Game.tutorial
-      ? `Обучение · шаг ${Game.tutorial.step + 1}/${TUTORIAL_STEPS}`
-      : `Уровень ${Game.level} · ${esc(dist.name)} · волна ${Game.waveIndex + 1}/${Game.config.waves.length}`;
+      ? t('pause.tutorial', { n: Game.tutorial.step + 1, total: TUTORIAL_STEPS })
+      : t('pause.level', { n: Game.level, district: esc(L(dist.name)), w: Game.waveIndex + 1, waves: Game.config.waves.length });
     return `
-      <h2>Пауза</h2>
+      <h2>${t('pause.title')}</h2>
       <p class="sub">${where}</p>
       ${this.aimSwitch()}
       <div class="buttons col">
-        <button class="btn primary big" data-action="resume">Продолжить</button>
+        <button class="btn primary big" data-action="resume">${t('resume')}</button>
         <div class="row">
-          <button class="btn" data-action="retry">Заново</button>
-          <button class="btn" data-action="menu">В меню</button>
+          <button class="btn" data-action="retry">${t('retry')}</button>
+          <button class="btn" data-action="menu">${t('menu')}</button>
         </div>
       </div>`;
   },
@@ -1014,17 +1037,17 @@ const UI = {
     const m = this.modal({
       cls: 'result victory',
       html: `
-        <h2>${r.challenge ? 'ИСПЫТАНИЕ ПРОЙДЕНО!' : 'ПОБЕДА!'}</h2>
-        <p class="sub">${r.challenge ? 'Испытание дня' : `Уровень ${r.level}`} · ${esc(districtOf(r.level).name)}</p>
+        <h2>${t(r.challenge ? 'win.challenge' : 'win.title')}</h2>
+        <p class="sub">${r.challenge ? t('win.challengeSub') : t('level', { n: r.level })} · ${esc(L(districtOf(r.level).name))}</p>
         <div class="big-stars">${[0, 1, 2].map(i => `<span class="${i < r.stars ? 'on' : ''}" style="animation-delay:${0.35 + i * 0.45}s">★</span>`).join('')}</div>
         <ul class="goals">${goals}</ul>
-        <div class="result-stats">☠ ${r.kills} · ⏱ ${mm}:${ss} · серия ×${r.best}</div>
+        <div class="result-stats">${t('win.stats', { kills: r.kills, time: `${mm}:${ss}`, best: r.best })}</div>
         <div class="rewards"><span class="coins" data-ref="coins">● +${rew.coins}</span>${rew.gold ? `<span class="gold">◆ +${rew.gold}</span>` : ''}</div>
-        ${rew.coins > 0 ? '<div class="buttons ad-row"><button class="btn ad" data-action="double">● ×2 монеты ▶</button></div>' : ''}
+        ${rew.coins > 0 ? `<div class="buttons ad-row"><button class="btn ad" data-action="double">${t('win.double')}</button></div>` : ''}
         <div class="buttons">
-          <button class="btn" data-action="menu">В меню</button>
-          <button class="btn" data-action="retry">Заново</button>
-          ${last || r.challenge ? '' : '<button class="btn primary" data-action="next">Дальше</button>'}
+          <button class="btn" data-action="menu">${t('menu')}</button>
+          <button class="btn" data-action="retry">${t('retry')}</button>
+          ${last || r.challenge ? '' : `<button class="btn primary" data-action="next">${t('next')}</button>`}
         </div>`,
     });
     const after = then => () => {
@@ -1033,7 +1056,7 @@ const UI = {
       else then();
     };
     Object.assign(m.actions, {
-      double: () => Platform.showRewarded('×2 монеты').then(ok => {
+      double: () => Platform.showRewarded(t('ad.double')).then(ok => {
         if (!ok) return;
         Progress.data.coins += rew.coins;
         Progress.save();
@@ -1059,32 +1082,32 @@ const UI = {
     const m = this.modal({
       cls: 'result defeat',
       html: `
-        <h2>ТЫ ПОГИБ</h2>
-        <p class="sub">${r.challenge ? 'Испытание дня' : `Уровень ${r.level}`} · дошёл до волны ${r.wave}/${r.waves}</p>
+        <h2>${t('lose.title')}</h2>
+        <p class="sub">${r.challenge ? t('win.challengeSub') : t('level', { n: r.level })} · ${t('lose.wave', { w: r.wave, waves: r.waves })}</p>
         <div class="result-stats">☠ ${r.kills}</div>
-        <div class="rewards"><span class="coins" data-ref="coins">● +${r.coins}</span><small data-ref="coins-note">половина собранного</small></div>
+        <div class="rewards"><span class="coins" data-ref="coins">● +${r.coins}</span><small data-ref="coins-note">${t('lose.half')}</small></div>
         <div class="buttons ad-row">
-          ${r.canRevive ? '<button class="btn ad" data-action="revive">♥ Второй шанс ▶</button>' : ''}
-          ${r.allCoins > r.coins ? `<button class="btn ad" data-action="keep">● Сохранить все ${r.allCoins} ▶</button>` : ''}
+          ${r.canRevive ? `<button class="btn ad" data-action="revive">${t('lose.revive')}</button>` : ''}
+          ${r.allCoins > r.coins ? `<button class="btn ad" data-action="keep">${t('lose.keep', { n: r.allCoins })}</button>` : ''}
         </div>
         <div class="buttons">
-          <button class="btn" data-action="menu">В меню</button>
-          <button class="btn" data-action="arsenal">Арсенал</button>
-          <button class="btn primary" data-action="retry">Заново</button>
+          <button class="btn" data-action="menu">${t('menu')}</button>
+          <button class="btn" data-action="arsenal">${t('lose.arsenal')}</button>
+          <button class="btn primary" data-action="retry">${t('retry')}</button>
         </div>`,
     });
     const q = sel => m.el.querySelector(sel);
     Object.assign(m.actions, {
-      revive: () => Platform.showRewarded('Второй шанс').then(ok => {
+      revive: () => Platform.showRewarded(t('ad.revive')).then(ok => {
         if (!ok || Game.state !== 'defeat') return;
         this.closeModal(m);
         Game.revive();
       }),
-      keep: () => Platform.showRewarded('Сохранить монеты').then(ok => {
+      keep: () => Platform.showRewarded(t('ad.keep')).then(ok => {
         if (!ok) return;
         r.coins = r.allCoins;
         q('[data-ref="coins"]').textContent = `● +${r.coins}`;
-        q('[data-ref="coins-note"]').textContent = 'все монеты сохранены';
+        q('[data-ref="coins-note"]').textContent = t('lose.kept');
         const btn = q('[data-action="keep"]');
         if (btn) btn.remove();
       }),
@@ -1107,13 +1130,13 @@ const UI = {
     const m = this.modal({
       cls: 'reveal',
       html: `
-        <div class="ribbon">НОВОЕ ОРУЖИЕ</div>
+        <div class="ribbon">${t('reveal.weapon')}</div>
         <canvas class="weapon-art big" data-weapon="${w.id}"></canvas>
-        <h2 style="color:${w.color}">${esc(w.name)}</h2>
-        <p>${esc(w.desc)}</p>
+        <h2 style="color:${w.color}">${esc(L(w.name))}</h2>
+        <p>${esc(L(w.desc))}</p>
         <div class="buttons">
-          <button class="btn" data-action="later">Позже</button>
-          <button class="btn primary" data-action="take">Взять в бой</button>
+          <button class="btn" data-action="later">${t('later')}</button>
+          <button class="btn primary" data-action="take">${t('reveal.takeWeapon')}</button>
         </div>`,
     });
     Object.assign(m.actions, {
@@ -1127,11 +1150,11 @@ const UI = {
     const m = this.modal({
       cls: 'reveal',
       html: `
-        <div class="ribbon">НОВЫЙ ГЕРОЙ</div>
+        <div class="ribbon">${t('reveal.hero')}</div>
         <canvas class="portrait big" data-hero="${id}"></canvas>
-        <h2>${esc(h.name)} <small>${esc(h.role)}</small></h2>
-        <p><b>${Render.skillIcon[h.skill.id]} ${esc(h.skill.name)}</b> — ${esc(h.skill.desc)}</p>
-        <div class="buttons"><button class="btn primary" data-action="ok">В отряд!</button></div>`,
+        <h2>${esc(L(h.name))} <small>${esc(L(h.role))}</small></h2>
+        <p><b>${Render.skillIcon[h.skill.id]} ${esc(L(h.skill.name))}</b> — ${esc(L(h.skill.desc))}</p>
+        <div class="buttons"><button class="btn primary" data-action="ok">${t('reveal.joinSquad')}</button></div>`,
       onEscape: () => this.closeModal(m),
     });
     m.actions.ok = () => this.closeModal(m);
@@ -1144,10 +1167,10 @@ const UI = {
       html: `
         <canvas class="story-art" data-story="${dist.id}"></canvas>
         <div class="story-text">
-          <div class="ribbon">Район ${i + 1} из ${DISTRICTS.length}</div>
-          <h2 style="color:${dist.accent}">${esc(dist.name)}</h2>
-          <p>${esc(dist.story)}</p>
-          <div class="buttons"><button class="btn primary" data-action="go">Вперёд</button></div>
+          <div class="ribbon">${t('story.district', { n: i + 1, total: DISTRICTS.length })}</div>
+          <h2 style="color:${dist.accent}">${esc(L(dist.name))}</h2>
+          <p>${esc(L(dist.story))}</p>
+          <div class="buttons"><button class="btn primary" data-action="go">${t('story.go')}</button></div>
         </div>`,
     });
     m.actions.go = () => { this.closeModal(m); then(); };
