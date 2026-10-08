@@ -1,0 +1,83 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #07090d;
+  color: #f3e3c0;
+  font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: block;
+  touch-action: none;
+}
+
+/* «Поверни телефон» — only on touch devices held vertically */
+#rotate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(circle at 50% 40%, #2a2216 0%, #0b0d12 70%);
+  text-align: center;
+  padding: 24px;
+}
+
+body.portrait #rotate { display: flex; }
+
+.rotate-phone {
+  width: 64px;
+  height: 110px;
+  border: 5px solid #ffb547;
+  border-radius: 12px;
+  position: relative;
+  box-shadow: 0 0 24px rgba(255, 181, 71, 0.35);
+  animation: rotate-phone 2.2s ease-in-out infinite;
+}
+
+.rotate-phone::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: #ffb547;
+}
+
+.rotate-text {
+  font-size: 26px;
+  font-weight: bold;
+  color: #ffcf7a;
+  text-shadow: 0 0 12px rgba(255, 181, 71, 0.5);
+}
+
+.rotate-sub {
+  font-size: 15px;
+  color: #b9a888;
+}
+
+@keyframes rotate-phone {
+  0%, 20%   { transform: rotate(0deg); }
+  50%, 80%  { transform: rotate(-90deg); }
+  100%      { transform: rotate(0deg); }
+}
