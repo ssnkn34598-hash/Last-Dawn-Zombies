@@ -368,13 +368,73 @@ const Render = {
     ctx.closePath();
   },
 
+  // ---------- Permanent decals painted into the map ----------
+
+  splat(x, y, r, color, alpha = 0.7) {
+    if (!this.map) return;
+    const c = this.map.getContext('2d');
+    c.globalAlpha = alpha;
+    c.fillStyle = color;
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fill();
+    const drops = r > 6 ? 5 : 2;
+    for (let i = 0; i < drops; i++) {
+      const a = Math.random() * Math.PI * 2, d = r * (0.6 + Math.random() * 0.9);
+      c.beginPath();
+      c.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * (0.15 + Math.random() * 0.3), 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalAlpha = 1;
+  },
+
+  scorch(x, y, r) {
+    if (!this.map) return;
+    const c = this.map.getContext('2d');
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(10,8,6,0.65)');
+    g.addColorStop(0.6, 'rgba(20,16,12,0.35)');
+    g.addColorStop(1, 'rgba(20,16,12,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fill();
+  },
+
+  // Cracked ground where a zombie dug itself out.
+  crack(x, y, r) {
+    if (!this.map) return;
+    const c = this.map.getContext('2d');
+    c.fillStyle = 'rgba(30,22,14,0.55)';
+    c.beginPath();
+    c.ellipse(x, y + 3, r * 1.2, r * 0.8, 0, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = 'rgba(15,10,6,0.6)';
+    c.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) {
+      let a = Math.random() * Math.PI * 2, px = x, py = y;
+      c.beginPath();
+      c.moveTo(px, py);
+      for (let s = 0; s < 3; s++) {
+        a += (Math.random() - 0.5) * 0.8;
+        px += Math.cos(a) * r * 0.6;
+        py += Math.sin(a) * r * 0.6;
+        c.lineTo(px, py);
+      }
+      c.stroke();
+    }
+  },
+
+  // ---------- Frame ----------
+
   // view: { w, h } in logical units (h = 540)
   draw(ctx, game, view, input) {
     ctx.fillStyle = '#07090d';
     ctx.fillRect(0, 0, view.w, view.h);
 
-    const camX = Math.round(game.camera.x - view.w / 2);
-    const camY = Math.round(game.camera.y - view.h / 2);
+    const shake = Fx.shake;
+    const camX = Math.round(game.camera.x - view.w / 2 + (Math.random() - 0.5) * shake);
+    const camY = Math.round(game.camera.y - view.h / 2 + (Math.random() - 0.5) * shake);
 
     ctx.save();
     ctx.translate(-camX, -camY);
@@ -385,16 +445,30 @@ const Render = {
     const sh = Math.min(this.map.height - sy, view.h + 2);
     if (sw > 0 && sh > 0) ctx.drawImage(this.map, sx, sy, sw, sh, sx, sy, sw, sh);
 
-    this.drawHero(ctx, game.hero, game.time);
+    const vis = (x, y, m = 60) => x > camX - m && x < camX + view.w + m && y > camY - m && y < camY + view.h + m;
+
+    for (const p of game.pickups) if (vis(p.x, p.y)) this.drawPickup(ctx, p);
+    for (const b of game.barrels) if (!b.dead && vis(b.x, b.y)) this.drawBarrel(ctx, b, game.time);
+    for (const z of game.zombies) if (vis(z.x, z.y)) this.drawZombie(ctx, z, game.time);
+    this.drawTargetMarker(ctx, game);
+    this.drawHero(ctx, game.hero, game);
+    this.drawProjectiles(ctx);
+    this.drawFx(ctx);
+
     ctx.restore();
 
-    this.drawVignette(ctx, view);
-    this.drawHud(ctx, game, view);
+    this.drawVignette(ctx, view, game.hero);
+    this.drawHud(ctx, game, view, input);
     this.drawJoystick(ctx, input.joystick);
+    this.drawJoystick(ctx, input.aimStick);
+    if (game.aimMode === 'manual' && input.pointer && !input.aimStick.active) this.drawCrosshair(ctx, input.pointer.x, input.pointer.y, game);
   },
 
-  drawHero(ctx, h, t) {
+  // ---------- Entities ----------
+
+  drawHero(ctx, h, game) {
     const step = h.moving ? Math.sin(h.walkTime * 12) : 0;
+    if (h.invuln > 0.3 && Math.floor(game.time * 20) % 2) return;
 
     ctx.save();
     ctx.translate(h.x, h.y);
@@ -411,25 +485,36 @@ const Render = {
     ctx.beginPath(); ctx.ellipse(3, 6, h.r + 2, h.r * 0.75, 0, 0, Math.PI * 2); ctx.fill();
 
     ctx.rotate(h.facing);
+    const hurt = h.hurt > 0.2;
 
     // Legs
     ctx.fillStyle = '#2a2f38';
     ctx.beginPath(); ctx.ellipse(step * 7, -7, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(-step * 7, 7, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-    // Gun
+    // Gun (length depends on the weapon)
+    const w = WEAPONS[h.weapon];
+    const len = { pistol: 16, smg: 22, shotgun: 26, crossbow: 22, flamer: 26, launcher: 26, tesla: 22, plasma: 24, rocket: 30, minigun: 28 }[w.id] || 22;
+    const back = h.recoil * 4;
     ctx.fillStyle = '#222';
-    ctx.fillRect(6, 3, 22, 5);
+    ctx.fillRect(6 - back, 2, len, w.type === 'rocket' || w.type === 'grenade' ? 8 : 6);
     ctx.fillStyle = '#444';
-    ctx.fillRect(8, 2, 8, 7);
+    ctx.fillRect(8 - back, 1, 9, 8);
+    ctx.fillStyle = w.color;
+    ctx.fillRect(4 + len - back, 3, 3, 4);
+    if (w.id === 'crossbow') {
+      ctx.strokeStyle = '#6b4a2b';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(20 - back, -6); ctx.quadraticCurveTo(24 - back, 5, 20 - back, 16); ctx.stroke();
+    }
 
     // Arms
-    ctx.fillStyle = shade(h.color, -0.08);
-    ctx.beginPath(); ctx.arc(10, 8, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(7, -9, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hurt ? '#ff6a6a' : shade(h.color, -0.08);
+    ctx.beginPath(); ctx.arc(10 - back, 8, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7 - back, -7, 5, 0, Math.PI * 2); ctx.fill();
 
     // Torso (jacket)
-    ctx.fillStyle = h.color;
+    ctx.fillStyle = hurt ? '#ff6a6a' : h.color;
     ctx.beginPath(); ctx.ellipse(-1, 0, 11, 15, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = shade(h.color, -0.2);
     ctx.lineWidth = 2;
@@ -449,35 +534,595 @@ const Render = {
     ctx.restore();
   },
 
-  drawVignette(ctx, view) {
+  drawZombie(ctx, z, t) {
+    const def = z.def;
+    const r = z.r;
+    let scale = 1, alpha = 1, dy = 0;
+
+    if (z.state === 'rising') {
+      const k = Math.min(1, z.riseT / RISE_TIME);
+      // Hole and dirt mound
+      ctx.fillStyle = 'rgba(15,10,6,' + (0.8 * (1 - k * 0.5)) + ')';
+      ctx.beginPath(); ctx.ellipse(z.x, z.y + 4, r * 1.25, r * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a3a28';
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * Math.PI * 2 + z.walk;
+        ctx.beginPath(); ctx.arc(z.x + Math.cos(a) * r * 1.2, z.y + 4 + Math.sin(a) * r * 0.8, 4 + (i % 2) * 2, 0, Math.PI * 2); ctx.fill();
+      }
+      scale = 0.35 + 0.65 * k;
+      alpha = 0.25 + 0.75 * k;
+      dy = (1 - k) * 8;
+      // Grasping hand pokes out first
+      if (k < 0.45) {
+        ctx.fillStyle = def.color;
+        ctx.beginPath(); ctx.arc(z.x + Math.sin(t * 20) * 2, z.y - k * 20, 4, 0, Math.PI * 2); ctx.fill();
+        return;
+      }
+    }
+
+    const flash = z.flash > 0;
+    const col = c => (flash ? '#ffffff' : c);
+    const skin = col(def.color), shirt = col(def.shirt);
+    const step = Math.sin(z.walk * 2.2);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(z.x, z.y + dy);
+
+    // Leap telegraph: dashed red line to the landing spot.
+    if (z.mode === 'windup') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,60,60,0.7)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(z.lx - z.x, z.ly - z.y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(z.lx - z.x, z.ly - z.y, 16, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      ctx.translate((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3);
+    }
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    const air = z.mode === 'leap' ? 8 : 0;
+    ctx.beginPath(); ctx.ellipse(3 + air, 5 + air, r * 1.05 * scale, r * 0.8 * scale, 0, 0, Math.PI * 2); ctx.fill();
+    if (air) ctx.translate(0, -air);
+
+    if (z.haste > 0) {
+      ctx.strokeStyle = 'rgba(214,160,255,0.55)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r + 5, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    ctx.rotate(z.facing);
+    ctx.scale(scale, scale);
+
+    switch (def.behavior === 'chase' ? z.type : def.behavior) {
+      case 'lunge': { // crawler: no legs, long body, arms far forward
+        ctx.fillStyle = 'rgba(60,10,10,0.5)';
+        ctx.fillRect(-r * 1.8, -3, r, 6);
+        ctx.fillStyle = skin;
+        ctx.beginPath(); ctx.ellipse(r * 0.9 + step * 4, -r * 0.55, r * 0.55, 3.5, 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(r * 0.9 - step * 4, r * 0.55, r * 0.55, 3.5, -0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = shirt;
+        ctx.beginPath(); ctx.ellipse(-r * 0.3, 0, r * 1.05, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+        this.zombieHead(ctx, r * 0.55, 0, r * 0.45, skin, flash);
+        break;
+      }
+      case 'brute': {
+        this.zombieLegs(ctx, r * 0.6, step, shirt);
+        ctx.fillStyle = skin;
+        ctx.beginPath(); ctx.ellipse(r * 0.5, -r * 0.75, r * 0.5, r * 0.28, 0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(r * 0.5, r * 0.75, r * 0.5, r * 0.28, -0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = shirt;
+        ctx.beginPath(); ctx.ellipse(-2, 0, r * 0.62, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = col(shade(def.color, -0.05));
+        ctx.beginPath(); ctx.ellipse(-2, 0, r * 0.4, r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        this.zombieHead(ctx, r * 0.15, 0, r * 0.32, skin, flash);
+        break;
+      }
+      case 'explode': { // bloater: swollen body with pustules, blinks before bursting
+        const pulse = 1 + Math.sin(t * 5 + z.walk) * 0.05 + (z.fuse >= 0 ? 0.12 : 0);
+        this.zombieArms(ctx, r * 0.6, step, skin);
+        ctx.fillStyle = z.fuse >= 0 && Math.floor(t * 16) % 2 ? '#ff5a3a' : shirt;
+        ctx.beginPath(); ctx.arc(-2, 0, r * 0.9 * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = col('#c9c25a');
+        for (const [px, py, pr] of [[-6, -8, 4], [4, 7, 5], [-10, 6, 3], [6, -6, 3]]) {
+          ctx.beginPath(); ctx.arc(px * pulse, py * pulse, pr, 0, Math.PI * 2); ctx.fill();
+        }
+        this.zombieHead(ctx, r * 0.55, 0, r * 0.38, skin, flash);
+        break;
+      }
+      case 'ranged': { // spitter: green throat sac
+        this.zombieLegs(ctx, r * 0.55, step, shirt);
+        this.zombieArms(ctx, r * 0.55, step * 0.5, skin);
+        this.zombieTorso(ctx, r, shirt);
+        const sac = 1 + (z.spitAnim > 0 ? 0.4 : Math.max(0, 0.3 - z.timer * 0.15));
+        ctx.fillStyle = col('#9bd34a');
+        ctx.beginPath(); ctx.arc(r * 0.55, 0, r * 0.32 * sac, 0, Math.PI * 2); ctx.fill();
+        this.zombieHead(ctx, r * 0.25, 0, r * 0.42, skin, flash);
+        break;
+      }
+      case 'scream': { // screamer: long hair, gaping mouth
+        this.zombieLegs(ctx, r * 0.55, step, shirt);
+        this.zombieArms(ctx, r * 0.5, step, skin);
+        this.zombieTorso(ctx, r, shirt);
+        ctx.fillStyle = col('#2a2420');
+        ctx.beginPath(); ctx.ellipse(-r * 0.25, 0, r * 0.55, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        const hs = z.screaming ? 1.25 : 1;
+        this.zombieHead(ctx, r * 0.3, 0, r * 0.42 * hs, skin, flash);
+        ctx.fillStyle = '#1a0606';
+        ctx.beginPath(); ctx.ellipse(r * 0.55, 0, r * 0.12 * hs, r * 0.2 * hs, 0, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'armored': { // riot helmet and vest
+        this.zombieLegs(ctx, r * 0.55, step, '#1e242e');
+        this.zombieArms(ctx, r * 0.6, step, skin);
+        this.zombieTorso(ctx, r, shirt);
+        ctx.fillStyle = col('#3d4756');
+        this.roundRect(ctx, -r * 0.45, -r * 0.6, r * 0.7, r * 1.2, 4); ctx.fill();
+        ctx.fillStyle = col('#20262f');
+        ctx.beginPath(); ctx.arc(r * 0.2, 0, r * 0.48, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = flash ? '#fff' : 'rgba(140,180,210,0.6)';
+        ctx.fillRect(r * 0.42, -r * 0.32, r * 0.18, r * 0.64);
+        break;
+      }
+      case 'leap': { // jumper: wide crouched legs
+        const crouch = z.mode === 'windup' ? 1.3 : 1;
+        ctx.fillStyle = shirt;
+        ctx.beginPath(); ctx.ellipse(-r * 0.2, -r * 0.8 * crouch, 6, 4, 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-r * 0.2, r * 0.8 * crouch, 6, 4, -0.6, 0, Math.PI * 2); ctx.fill();
+        this.zombieArms(ctx, r * 0.7, step, skin);
+        ctx.fillStyle = shirt;
+        ctx.beginPath(); ctx.ellipse(-2, 0, r * 0.65, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+        this.zombieHead(ctx, r * 0.35, 0, r * 0.45, skin, flash);
+        break;
+      }
+      case 'runner': {
+        this.zombieLegs(ctx, r * 0.6, step * 1.4, shirt);
+        ctx.fillStyle = skin;
+        ctx.beginPath(); ctx.ellipse(-step * 5, -r * 0.75, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(step * 5, r * 0.75, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = shirt;
+        ctx.beginPath(); ctx.ellipse(-1, 0, r * 0.6, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+        this.zombieHead(ctx, r * 0.3, 0, r * 0.48, skin, flash);
+        break;
+      }
+      default: { // walker
+        this.zombieLegs(ctx, r * 0.55, step, shirt);
+        this.zombieArms(ctx, r * 0.6, step, skin);
+        this.zombieTorso(ctx, r, shirt);
+        // Torn shirt
+        ctx.fillStyle = col(shade(def.shirt, -0.1));
+        ctx.fillRect(-r * 0.4, -r * 0.2, r * 0.3, r * 0.4);
+        this.zombieHead(ctx, r * 0.25, 0, r * 0.45, skin, flash);
+      }
+    }
+
+    ctx.restore();
+
+    // Health bar
+    if (z.state === 'alive' && z.hp < z.maxHp) {
+      const bw = Math.max(24, r * 2), bx = z.x - bw / 2, by = z.y - r - 12;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+      ctx.fillStyle = z.def.armor ? '#9fb3c8' : '#d8423a';
+      ctx.fillRect(bx, by, bw * Math.max(0, z.hp / z.maxHp), 3);
+    }
+  },
+
+  zombieLegs(ctx, s, step, color) {
+    ctx.fillStyle = shade(color.startsWith('#') ? color : '#333333', -0.1);
+    ctx.beginPath(); ctx.ellipse(step * 6, -s, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-step * 6, s, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  },
+
+  zombieArms(ctx, s, step, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(s + 4 + step * 2, -s, s * 0.75, 3.5, 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s + 4 - step * 2, s, s * 0.75, 3.5, -0.1, 0, Math.PI * 2); ctx.fill();
+  },
+
+  zombieTorso(ctx, r, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(-2, 0, r * 0.62, r * 0.88, 0, 0, Math.PI * 2); ctx.fill();
+  },
+
+  zombieHead(ctx, x, y, r, skin, flash) {
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    if (!flash) {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#ff3a2a';
+    ctx.fillRect(x + r * 0.45, y - r * 0.45, 2.5, 2.5);
+    ctx.fillRect(x + r * 0.45, y + r * 0.25, 2.5, 2.5);
+  },
+
+  drawBarrel(ctx, b, t) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.arc(4, 5, b.r, 0, Math.PI * 2); ctx.fill();
+    const hot = b.flash > 0 || (b.fuse >= 0 && Math.floor(t * 30) % 2);
+    ctx.fillStyle = hot ? '#ffffff' : '#a8281e';
+    ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#6a140e';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, b.r - 4, 0, Math.PI * 2); ctx.stroke();
+    // Hazard triangle
+    ctx.fillStyle = '#ffcf3a';
+    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(7, 5); ctx.lineTo(-7, 5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(-1, -3, 2, 5);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath(); ctx.arc(-5, -5, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  },
+
+  drawPickup(ctx, p) {
+    if (p.life < 3 && Math.floor(p.life * 8) % 2) return;
+    const bob = Math.sin(p.bob) * 2;
+    ctx.save();
+    ctx.translate(p.x, p.y + bob);
+    if (p.kind === 'xp') {
+      const s = 4 + Math.min(4, p.value);
+      ctx.fillStyle = 'rgba(90,220,255,0.25)';
+      ctx.beginPath(); ctx.arc(0, 0, s + 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.value >= 4 ? '#7affc8' : '#5ad8ff';
+      ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.7, 0); ctx.lineTo(0, s); ctx.lineTo(-s * 0.7, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillRect(-1, -s * 0.6, 2, s * 0.5);
+    } else if (p.kind === 'coin') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(1, 6 - bob, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c98a1a';
+      ctx.beginPath(); ctx.arc(0, 0, p.value > 1 ? 8 : 6.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd23a';
+      ctx.beginPath(); ctx.arc(-0.5, -0.5, p.value > 1 ? 6 : 4.8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff3b0';
+      ctx.fillRect(-2, -3, 2, 3);
+    } else {
+      ctx.fillStyle = 'rgba(90,255,122,0.25)';
+      ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f2f2f2';
+      this.roundRect(ctx, -10, -8, 20, 16, 3); ctx.fill();
+      ctx.fillStyle = '#d8302a';
+      ctx.fillRect(-2.5, -6, 5, 12);
+      ctx.fillRect(-6, -2.5, 12, 5);
+    }
+    ctx.restore();
+  },
+
+  drawTargetMarker(ctx, game) {
+    const z = game.target;
+    if (!z || z.state !== 'alive') return;
+    const r = z.r + 8, a = game.time * 3;
+    ctx.save();
+    ctx.translate(z.x, z.y);
+    ctx.rotate(a);
+    ctx.strokeStyle = 'rgba(255,90,60,0.85)';
+    ctx.lineWidth = 2.5;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, i * Math.PI / 2 + 0.25, i * Math.PI / 2 + 1.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  drawProjectiles(ctx) {
+    for (const p of Weapons.projectiles) {
+      const w = p.w;
+      switch (p.type) {
+        case 'bullet': {
+          ctx.strokeStyle = w.color;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - p.vx * 0.018, p.y - p.vy * 0.018);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          break;
+        }
+        case 'bolt': {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(Math.atan2(p.vy, p.vx));
+          ctx.strokeStyle = '#a07a4a';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(0, 0); ctx.stroke();
+          ctx.fillStyle = w.color;
+          ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3, -4); ctx.lineTo(-3, 4); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#e0e0e0';
+          ctx.fillRect(-21, -3, 4, 6);
+          ctx.restore();
+          break;
+        }
+        case 'flame': {
+          const k = p.life / p.max;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = Math.min(1, k * 1.5) * 0.55;
+          ctx.fillStyle = k > 0.6 ? '#ffd27a' : k > 0.3 ? '#ff8a2a' : '#c43a1a';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          break;
+        }
+        case 'grenade': {
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.beginPath(); ctx.ellipse(p.x, p.y, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.save();
+          ctx.translate(p.x, p.y - p.z);
+          ctx.rotate(p.spin);
+          ctx.fillStyle = '#4f6a2e';
+          ctx.beginPath(); ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = w.color;
+          ctx.fillRect(-1, -6, 3, 3);
+          ctx.restore();
+          break;
+        }
+        case 'plasma': {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = 'rgba(196,107,255,0.35)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = w.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.radius * 0.45, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          break;
+        }
+        case 'rocket': {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle);
+          ctx.fillStyle = '#ffb547';
+          ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-18 - Math.random() * 8, 0); ctx.lineTo(-8, 3); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#5a5e52';
+          ctx.fillRect(-9, -3.5, 16, 7);
+          ctx.fillStyle = w.color;
+          ctx.beginPath(); ctx.moveTo(7, -3.5); ctx.lineTo(13, 0); ctx.lineTo(7, 3.5); ctx.closePath(); ctx.fill();
+          ctx.restore();
+          break;
+        }
+      }
+    }
+
+    for (const s of Zombies.spits) {
+      ctx.fillStyle = 'rgba(155,211,74,0.3)';
+      ctx.beginPath(); ctx.arc(s.x, s.y, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#9bd34a';
+      ctx.beginPath(); ctx.arc(s.x, s.y, 5.5, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+
+  drawFx(ctx) {
+    // Particles: normal ones first, glowing ones additively.
+    for (const p of Fx.particles) {
+      if (p.kind === 'fire' || p.kind === 'spark' || p.kind === 'plasma') continue;
+      const k = p.life / p.max;
+      ctx.globalAlpha = p.kind === 'smoke' ? k * 0.45 : Math.min(1, k * 2);
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of Fx.flashes) {
+      const k = f.life / f.max;
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius);
+      g.addColorStop(0, f.color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = k;
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const p of Fx.particles) {
+      if (p.kind !== 'fire' && p.kind !== 'spark' && p.kind !== 'plasma') continue;
+      const k = p.life / p.max;
+      ctx.globalAlpha = k;
+      ctx.fillStyle = p.color;
+      if (p.kind === 'spark') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.size;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + k * 0.5), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    for (const a of Fx.arcs) {
+      const k = a.life / a.max;
+      ctx.globalAlpha = k;
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = 7;
+      ctx.globalAlpha = k * 0.35;
+      this.polyline(ctx, a.points);
+      ctx.globalAlpha = k;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      this.polyline(ctx, a.points);
+    }
+    ctx.restore();
+
+    for (const r of Fx.rings) {
+      const k = r.life / r.max;
+      ctx.globalAlpha = k;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = r.width * k + 1;
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.radius * (1 - k * 0.7), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (const t of Fx.texts) {
+      const k = t.life / t.max;
+      ctx.globalAlpha = Math.min(1, k * 3);
+      ctx.font = `bold ${t.size}px "Trebuchet MS", Arial, sans-serif`;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.strokeText(t.text, t.x, t.y);
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.text, t.x, t.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  },
+
+  polyline(ctx, pts) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  },
+
+  // ---------- Screen space ----------
+
+  drawVignette(ctx, view, hero) {
     const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * 0.35, view.w / 2, view.h / 2, view.w * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, 'rgba(0,0,0,0.55)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, view.w, view.h);
+
+    if (hero.hurt > 0) {
+      const r = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * 0.3, view.w / 2, view.h / 2, view.w * 0.65);
+      r.addColorStop(0, 'rgba(200,0,0,0)');
+      r.addColorStop(1, `rgba(200,0,0,${hero.hurt * 1.2})`);
+      ctx.fillStyle = r;
+      ctx.fillRect(0, 0, view.w, view.h);
+    }
   },
 
-  drawHud(ctx, game, view) {
-    ctx.font = 'bold 16px "Trebuchet MS", Arial, sans-serif';
-    ctx.textBaseline = 'top';
+  hudText(ctx, text, x, y, color, size = 16, align = 'left') {
+    ctx.font = `bold ${size}px "Trebuchet MS", Arial, sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  },
+
+  // Tappable HUD areas (in logical coords), used by main.js on touch screens.
+  buttons: {},
+
+  drawHud(ctx, game, view, input) {
+    const h = game.hero;
+
+    // Health bar
+    const bx = 16, by = 14, bw = 220, bh = 18;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    this.roundRect(ctx, bx - 2, by - 2, bw + 4, bh + 4, 6); ctx.fill();
+    const k = Math.max(0, h.hp / h.maxHp);
+    ctx.fillStyle = k > 0.5 ? '#4ec95a' : k > 0.25 ? '#e0b030' : '#e0402e';
+    this.roundRect(ctx, bx, by, Math.max(6, bw * k), bh, 5); ctx.fill();
+    this.hudText(ctx, `${Math.ceil(h.hp)} / ${h.maxHp}`, bx + bw / 2, by + bh / 2 + 1, '#fff', 13, 'center');
+
+    // XP, coins, kills
+    this.hudText(ctx, `◆ ${h.xp}`, bx, by + 38, '#5ad8ff', 16);
+    this.hudText(ctx, `● ${h.coins}`, bx + 80, by + 38, '#ffd23a', 16);
+    this.hudText(ctx, `☠ ${game.kills}`, bx + 160, by + 38, '#d8d0c0', 16);
+    this.hudText(ctx, `Уровень ${game.level} · ${game.district.name}`, bx, by + 62, game.district.accent, 13);
+
+    // Streak
+    const s = game.streak;
+    if (s.count >= 2) {
+      const cx = view.w / 2;
+      this.hudText(ctx, `СЕРИЯ ×${s.count}`, cx, 26, '#ff8a4a', 22, 'center');
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(cx - 50, 42, 100, 4);
+      ctx.fillStyle = '#ff8a4a';
+      ctx.fillRect(cx - 50, 42, 100 * (s.timer / STREAK_TIME), 4);
+    }
+
+    // Weapon & aim mode (also buttons on touch)
+    const w = game.weapon;
+    const wx = view.w - 16;
+    const ww = 190, wh = 34;
+    this.buttons.weapon = { x: wx - ww, y: 12, w: ww, h: wh };
+    this.buttons.aim = { x: wx - ww, y: 52, w: ww, h: 30 };
+
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this.roundRect(ctx, wx - ww, 12, ww, wh, 8); ctx.fill();
+    ctx.strokeStyle = w.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const key = (game.hero.weapon + 1) % 10;
+    this.hudText(ctx, `${key}  ${w.name}`, wx - ww + 12, 12 + wh / 2 + 1, w.color, 17);
+    // Reload/cooldown pip
+    const cd = Math.max(0, Math.min(1, h.cooldown * w.rate));
+    if (cd > 0 && w.rate < 2) {
+      ctx.fillStyle = w.color;
+      ctx.fillRect(wx - ww + 8, 12 + wh - 5, (ww - 16) * (1 - cd), 3);
+    }
+
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillText(`Уровень ${game.level} · ${game.district.name}`, 17, 15);
-    ctx.fillStyle = game.district.accent;
-    ctx.fillText(`Уровень ${game.level} · ${game.district.name}`, 16, 14);
+    this.roundRect(ctx, wx - ww, 52, ww, 30, 8); ctx.fill();
+    const auto = game.aimMode === 'auto';
+    this.hudText(ctx, auto ? 'Прицел: АВТО' : 'Прицел: РУЧНОЙ', wx - ww + 12, 68, auto ? '#8fd8ff' : '#ffb547', 14);
+    if (!input.touch) this.hudText(ctx, 'M', wx - 12, 68, 'rgba(255,255,255,0.5)', 13, 'right');
+
+    // Banners
+    let y = view.h * 0.26;
+    for (const b of game.banners) {
+      const t = b.life / b.max;
+      ctx.globalAlpha = Math.min(1, t * 4, (1 - t) * 10 + 0.2);
+      this.hudText(ctx, b.text, view.w / 2, y, b.color, 30, 'center');
+      if (b.sub) this.hudText(ctx, b.sub, view.w / 2, y + 28, '#f3e3c0', 15, 'center');
+      y += b.sub ? 64 : 44;
+    }
+    ctx.globalAlpha = 1;
+
+    // Temporary debug hint
+    const hint = input.touch
+      ? 'тест: тап по оружию — следующее, по прицелу — смена режима'
+      : 'тест: 1–9, 0 — оружие · M — прицел · ЛКМ — огонь в ручном режиме';
+    this.hudText(ctx, hint, view.w / 2, view.h - 14, 'rgba(243,227,192,0.55)', 12, 'center');
+    ctx.textAlign = 'left';
+  },
+
+  drawCrosshair(ctx, x, y, game) {
+    const w = game.weapon;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 4;
+    this.crossLines(ctx);
+    ctx.strokeStyle = w.color;
+    ctx.lineWidth = 2;
+    this.crossLines(ctx);
+    ctx.restore();
+  },
+
+  crossLines(ctx) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.moveTo(-16, 0); ctx.lineTo(-6, 0);
+    ctx.moveTo(16, 0); ctx.lineTo(6, 0);
+    ctx.moveTo(0, -16); ctx.lineTo(0, -6);
+    ctx.moveTo(0, 16); ctx.lineTo(0, 6);
+    ctx.stroke();
   },
 
   drawJoystick(ctx, j) {
-    if (!j.active) return;
+    if (!j || !j.active) return;
     ctx.save();
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = '#000';
     ctx.beginPath(); ctx.arc(j.ox, j.oy, j.radius, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 0.6;
-    ctx.strokeStyle = '#ffcf7a';
+    ctx.strokeStyle = j.color || '#ffcf7a';
     ctx.lineWidth = 3;
     ctx.stroke();
     ctx.globalAlpha = 0.8;
-    ctx.fillStyle = '#ffb547';
+    ctx.fillStyle = j.color || '#ffb547';
     ctx.beginPath(); ctx.arc(j.x, j.y, j.radius * 0.42, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   },
