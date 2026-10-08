@@ -359,7 +359,7 @@ button {
 .weapon-icon { width: 56px; height: 28px; flex: none; }
 
 .side-title { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
-.battle-side { justify-content: flex-start; gap: 8px; align-items: stretch; }
+.battle-side { justify-content: flex-start; gap: 8px; align-items: stretch; overflow-y: auto; touch-action: pan-y; }
 .teaser {
   display: flex;
   align-items: center;
@@ -924,6 +924,43 @@ canvas.raven.big { width: 96px; height: 96px; display: block; margin: 0 auto -4p
   .lg-ico { font-size: 18px; height: 26px; line-height: 26px; }
   .chest-big { transform: scale(0.85); margin: 4px auto 0; }
 }
+
+/* ---- Ads ---- */
+.btn.ad {
+  background: linear-gradient(180deg, #1e5a46, #123a2e);
+  border-color: #5ad8a0;
+  color: #b8f8da;
+}
+.modal .buttons.ad-row { margin-top: 8px; }
+.modal .buttons.ad-row:empty { display: none; }
+.teaser.ad { border: 1px solid rgba(90, 216, 160, 0.6) !important; background: rgba(30, 90, 70, 0.35); cursor: pointer; }
+.teaser.ad i { color: #8af0c0; }
+
+.demo-ad {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 3, 6, 0.92);
+  animation: fade-in 0.15s ease-out;
+}
+.demo-ad-box {
+  width: min(420px, 90vw);
+  padding: 22px;
+  border-radius: 16px;
+  text-align: center;
+  background: #10141c;
+  border: 2px dashed #5a6a80;
+  color: #c8d0dc;
+}
+.demo-ad-title { font-size: 26px; font-weight: bold; color: #e8eef6; }
+.demo-ad-sub { margin-top: 4px; font-size: 14px; color: #8a96a8; }
+.demo-ad-note { margin-top: 10px; font-size: 12px; color: #6a7688; }
+.demo-ad-bar { margin-top: 14px; height: 6px; border-radius: 3px; background: #222a36; overflow: hidden; }
+.demo-ad-bar i { display: block; height: 100%; background: #5ad8a0; animation: demo-ad-fill 2s linear forwards; }
+@keyframes demo-ad-fill { from { width: 0; } to { width: 100%; } }
 
 /* Native scrolling inside the menu (the page itself blocks gestures). */
 .map-scroll, .hscroll { touch-action: pan-x; }

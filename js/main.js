@@ -222,15 +222,28 @@ document.addEventListener('contextmenu', e => e.preventDefault());
 
 let last = performance.now();
 
+let booted = false;
+
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
 
-  if (!view.paused) {
-    Game.update(dt, input.controls(), view);
+  if (!booted) {
+    // Waiting for the platform (SDK, cloud save).
+    ctx.fillStyle = '#07090d';
+    ctx.fillRect(0, 0, view.w, view.h);
+    Render.hudText(ctx, 'Загрузка…', view.w / 2, view.h / 2, '#ffcf7a', 26, 'center');
+    requestAnimationFrame(frame);
+    return;
   }
 
-  ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
+  // Ads and game_api_pause freeze the game entirely.
+  if (!view.paused && !Platform.suspended) {
+    Game.update(dt, input.controls(), view);
+  }
+  Platform.setGameplay(Game.state === 'play' && !view.paused && !Platform.suspended && !document.hidden);
+
   Render.draw(ctx, Game, view, input);
 
   requestAnimationFrame(frame);
@@ -241,12 +254,17 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 resize();
 Game.touch = isTouch;
-UI.init();
-// ?debug&level=N jumps straight into a level, ?debug&tutorial replays the
-// tutorial; otherwise start in the menu.
-if (Game.debug && params.has('tutorial')) UI.startTutorial();
-else if (Game.debug && params.get('level')) UI.startLevel(startLevel);
-else UI.showMenu();
-Game.clampCamera(view);
 canvas.style.cursor = 'crosshair';
 requestAnimationFrame(t => { last = t; frame(t); });
+
+Platform.init().then(() => {
+  UI.init();
+  // ?debug&level=N jumps straight into a level, ?debug&tutorial replays the
+  // tutorial; otherwise start in the menu.
+  if (Game.debug && params.has('tutorial')) UI.startTutorial();
+  else if (Game.debug && params.get('level')) UI.startLevel(startLevel);
+  else UI.showMenu();
+  Game.clampCamera(view);
+  booted = true;
+  Platform.ready();
+});

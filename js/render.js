@@ -2367,6 +2367,17 @@ const Render = {
       }
       if (!input.touch) this.hudText(ctx, String(i + 1), x + cw / 2, yy + ch - 16, 'rgba(255,255,255,0.45)', 13, 'center');
     });
+    // Rewarded ad: different options (once per level, not in the tutorial).
+    if (!game.perkRerolled && !game.tutorial) {
+      const bw = 300, bh = 46, bx = cx - bw / 2, by = y + ch + 14;
+      this.buttons.reroll = { x: bx, y: by, w: bw, h: bh };
+      ctx.fillStyle = 'rgba(14,40,32,0.9)';
+      this.roundRect(ctx, bx, by, bw, bh, 10); ctx.fill();
+      ctx.strokeStyle = '#5ad8a0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      this.hudText(ctx, '⟳ Другие варианты  ▶ реклама', cx, by + bh / 2 + 1, '#8af0c0', 16, 'center');
+    }
   },
 
   drawCrosshair(ctx, x, y, game) {

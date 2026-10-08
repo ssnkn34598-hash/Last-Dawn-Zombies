@@ -7,6 +7,19 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Последний рассвет</title>
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Yandex Games SDK lives at /sdk.js on Yandex hosting. Locally (file:// or
+    // localhost) there is no SDK, and the game shows demo ads instead.
+    window.__sdkReady = new Promise(function (resolve) {
+      var host = location.hostname;
+      if (!/^https?:$/.test(location.protocol) || host === 'localhost' || host === '127.0.0.1') return resolve(null);
+      var s = document.createElement('script');
+      s.src = '/sdk.js';
+      s.onload = function () { resolve(window.YaGames || null); };
+      s.onerror = function () { resolve(null); };
+      document.head.appendChild(s);
+    });
+  </script>
 </head>
 <body>
   <canvas id="game"></canvas>

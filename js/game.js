@@ -205,6 +205,8 @@ const Game = {
     this.victoryDelay = -1;
     this.result = null;
     this.target = null;
+    this.revived = false;
+    this.perkRerolled = false;
     this.tutorial = null;
     this.hint = null;
     this.hintQueue = [];
@@ -378,6 +380,43 @@ const Game = {
     };
   },
 
+  // Second chance after a rewarded ad: back on your feet with half health.
+  revive() {
+    const h = this.hero;
+    if (this.state !== 'defeat' || this.revived) return;
+    this.revived = true;
+    h.dead = false;
+    h.hp = Math.round(h.maxHp * 0.5);
+    h.invuln = 2.5;
+    this.result = null;
+    this.setState('play');
+    Fx.ring(h.x, h.y, 240, '#7aff8a', 0.6, 8);
+    for (const z of this.zombies) {
+      if (z.state !== 'alive') continue;
+      const d = Math.hypot(z.x - h.x, z.y - h.y);
+      if (d < 240) {
+        const a = Math.atan2(z.y - h.y, z.x - h.x);
+        z.kx += Math.cos(a) * 700 / z.mass;
+        z.ky += Math.sin(a) * 700 / z.mass;
+      }
+    }
+    Bosses.shots.length = 0;
+    this.banner('ВТОРОЙ ШАНС', '#7aff8a', 1.6);
+  },
+
+  // New perk options after a rewarded ad (once per level).
+  rerollPerks() {
+    if (this.state !== 'perk' || this.perkRerolled) return;
+    this.perkRerolled = true;
+    const old = this.perkChoices.map(p => p.id);
+    let pool = PERKS.filter(p => (this.perks[p.id] || 0) < p.max && !old.includes(p.id));
+    if (pool.length < 3) pool = PERKS.filter(p => (this.perks[p.id] || 0) < p.max);
+    const choices = [];
+    while (choices.length < 3 && pool.length) choices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    this.perkChoices = choices;
+    this.stateTime = 0;
+  },
+
   pause() {
     if (this.state !== 'play') return;
     this.setState('paused');
@@ -443,6 +482,9 @@ const Game = {
         break;
       case 'pause':
         this.pause();
+        break;
+      case 'reroll':
+        if (this.state === 'perk' && !this.perkRerolled) this.emit('rerollAd');
         break;
       case 'skill':
         this.useSkill();
@@ -818,6 +860,8 @@ const Game = {
       kills: this.kills,
       wave: this.waveIndex + 1,
       waves: this.config.waves.length,
+      allCoins: h.coins,
+      canRevive: !this.revived && !this.tutorial,
       level: this.level,
       best: this.streak.best,
       challenge: !!this.config.challenge,

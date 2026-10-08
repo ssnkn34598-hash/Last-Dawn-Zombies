@@ -174,6 +174,8 @@ const Progress = {
 
 // ---------- UI ----------
 
+const AD_COINS_COOLDOWN = 5 * 60 * 1000;
+
 const TABS = [
   { id: 'battle',  name: 'Бой',     icon: '⚔' },
   { id: 'map',     name: 'Карта',   icon: '⌂' },
@@ -212,6 +214,9 @@ const UI = {
     Game.hooks.victory = r => this.onVictory(r);
     Game.hooks.defeat = r => this.onDefeat(r);
     Game.hooks.pause = () => this.showPause();
+    Game.hooks.rerollAd = () => Platform.showRewarded('Другие улучшения').then(ok => {
+      if (ok) Game.rerollPerks();
+    });
     Game.hooks.tutorialDone = () => this.onTutorialDone();
     Game.hooks.tutorialSkip = () => this.confirm('Пропустить обучение?', 'Его можно пройти позже: Настройки → «Пройти обучение».', () => {
       Progress.data.tutorialOffered = true;
@@ -274,6 +279,7 @@ const UI = {
     if (tab) this.tab = tab;
     Game.startMenuScene(Progress.data.unlocked);
     this.menu.classList.remove('hidden');
+    Platform.banner(true);
     this.render();
     Progress.save();
     if (!Progress.data.tutorialOffered) this.showTutorialOffer();
@@ -356,6 +362,7 @@ const UI = {
 
   hideMenu() {
     this.menu.classList.add('hidden');
+    Platform.banner(false);
     document.getElementById('toast').classList.add('hidden');
   },
 
@@ -405,6 +412,7 @@ const UI = {
           <div class="side-title">Впереди</div>
           ${nextWeapon ? `<div class="teaser"><canvas class="weapon-icon" data-weapon="${nextWeapon.id}"></canvas><div><b>${esc(nextWeapon.name)}</b><small>откроется на ур. ${nextWeapon.unlock}</small></div></div>` : ''}
           ${nextBoss ? `<div class="teaser boss"><i>☠</i><div><b>${esc(nextBoss.name)}</b><small>уровень ${nextBoss.level}</small></div></div>` : ''}
+          ${this.adCoinsTeaser()}
           <button class="teaser" data-tab="quests"><i>✓</i><div><b>Задания дня</b><small>${d.daily.tasks.filter(t => t.claimed).length}/3 · ${Daily.rewardsWaiting() ? 'есть награды!' : 'испытание ждёт'}</small></div></button>
         </div>
       </section>`;
@@ -583,7 +591,9 @@ const UI = {
           <div class="chest-row ${freeLeft <= 0 ? 'ready' : ''}">
             <div class="chest-ico free"><i></i></div>
             <div class="chest-info"><b>Бесплатный</b><small>${freeLeft <= 0 ? 'Готов!' : `через <span data-bind="chest-left">${formatTime(freeLeft)}</span>`}</small></div>
-            <button class="btn ${freeLeft <= 0 ? 'primary' : 'disabled'} small" data-action="free-chest">Открыть</button>
+            ${freeLeft <= 0
+              ? '<button class="btn primary small" data-action="free-chest">Открыть</button>'
+              : '<button class="btn ad small" data-action="free-chest-ad">Сейчас ▶</button>'}
           </div>
           <div class="chest-row ${starReady > 0 ? 'ready' : ''}">
             <div class="chest-ico star"><i></i></div>
@@ -599,6 +609,17 @@ const UI = {
           <div class="dlist vscroll">${quests}</div>
         </div>
       </div>`;
+  },
+
+  adCoinsAmount() {
+    return Math.round((60 + Progress.data.unlocked * 6) / 10) * 10;
+  },
+
+  adCoinsTeaser() {
+    const left = (Progress.data.adCoinsAt || 0) - Date.now();
+    return left > 0
+      ? `<div class="teaser"><i>●</i><div><b>Монеты за рекламу</b><small>через <span data-bind="adcoins-left">${formatTime(left)}</span></small></div></div>`
+      : `<button class="teaser ad" data-action="ad-coins"><i>▶</i><div><b>● +${this.adCoinsAmount()}</b><small>за просмотр рекламы</small></div></button>`;
   },
 
   // ---------- Daily windows ----------
@@ -619,15 +640,25 @@ const UI = {
         <h2>Ежедневная награда</h2>
         <p class="sub">${dd.streak > 1 ? `Ты заходишь ${dd.streak} дня подряд!` : 'Заходи каждый день — награды растут.'} Пропустишь день — счёт начнётся заново.</p>
         <div class="lg-row">${cards}</div>
-        <div class="buttons"><button class="btn primary big" data-action="take">Забрать</button></div>`,
+        <div class="buttons">
+          <button class="btn ad big" data-action="take2">×2 ▶ реклама</button>
+          <button class="btn primary big" data-action="take">Забрать</button>
+        </div>`,
     });
-    m.actions.take = () => {
+    const take = double => {
       const got = Daily.claimLogin();
+      if (got && double) {
+        Daily.give(got);
+        Progress.save();
+      }
       this.closeModal(m);
       this.render();
-      if (got && DAILY_LOGIN[dd.streak - 1].chest) this.showChest('Сундук дня', got);
+      const shown = got && double ? { coins: (got.coins || 0) * 2, gold: (got.gold || 0) * 2 } : got;
+      if (got && (DAILY_LOGIN[dd.streak - 1].chest || double)) this.showChest(double ? 'Награда дня ×2' : 'Сундук дня', shown);
       else this.menuHints();
     };
+    m.actions.take = () => take(false);
+    m.actions.take2 = () => Platform.showRewarded('×2 награда дня').then(ok => take(ok));
   },
 
   showChest(title, loot) {
@@ -666,6 +697,10 @@ const UI = {
       return;
     }
     this.bind('day-left', formatTime(Daily.msToNextDay()));
+    const adLeft = (Progress.data.adCoinsAt || 0) - Date.now();
+    if (adLeft > 0) this.bind('adcoins-left', formatTime(adLeft));
+    else if (this.lastAdLeft > 0 && this.tab === 'battle') this.render();
+    this.lastAdLeft = adLeft;
     const left = Daily.freeChestLeft();
     if (left > 0) this.bind('chest-left', formatTime(left));
     const dot = Daily.rewardsWaiting();
@@ -758,6 +793,25 @@ const UI = {
         if (loot) this.showChest('Бесплатный сундук', loot);
         break;
       }
+      case 'free-chest-ad':
+        Platform.showRewarded('Сундук без ожидания').then(ok => {
+          if (!ok) return;
+          d.chests.freeAt = 0;
+          const loot = Daily.openFreeChest();
+          if (loot) this.showChest('Бесплатный сундук', loot);
+        });
+        break;
+      case 'ad-coins':
+        if (Date.now() < (d.adCoinsAt || 0)) break;
+        Platform.showRewarded('Монеты').then(ok => {
+          if (!ok) return;
+          const amount = this.adCoinsAmount();
+          d.coins += amount;
+          d.adCoinsAt = Date.now() + AD_COINS_COOLDOWN;
+          Progress.save();
+          this.showChest('Монеты за рекламу', { coins: amount });
+        });
+        break;
       case 'star-chest': {
         const loot = Daily.openStarChest();
         if (loot) this.showChest('Звёздный сундук', loot);
@@ -965,7 +1019,8 @@ const UI = {
         <div class="big-stars">${[0, 1, 2].map(i => `<span class="${i < r.stars ? 'on' : ''}" style="animation-delay:${0.35 + i * 0.45}s">★</span>`).join('')}</div>
         <ul class="goals">${goals}</ul>
         <div class="result-stats">☠ ${r.kills} · ⏱ ${mm}:${ss} · серия ×${r.best}</div>
-        <div class="rewards"><span class="coins">● +${rew.coins}</span>${rew.gold ? `<span class="gold">◆ +${rew.gold}</span>` : ''}</div>
+        <div class="rewards"><span class="coins" data-ref="coins">● +${rew.coins}</span>${rew.gold ? `<span class="gold">◆ +${rew.gold}</span>` : ''}</div>
+        ${rew.coins > 0 ? '<div class="buttons ad-row"><button class="btn ad" data-action="double">● ×2 монеты ▶</button></div>' : ''}
         <div class="buttons">
           <button class="btn" data-action="menu">В меню</button>
           <button class="btn" data-action="retry">Заново</button>
@@ -978,33 +1033,74 @@ const UI = {
       else then();
     };
     Object.assign(m.actions, {
+      double: () => Platform.showRewarded('×2 монеты').then(ok => {
+        if (!ok) return;
+        Progress.data.coins += rew.coins;
+        Progress.save();
+        m.el.querySelector('[data-ref="coins"]').textContent = `● +${rew.coins * 2}`;
+        const btn = m.el.querySelector('[data-action="double"]');
+        if (btn) btn.remove();
+      }),
       menu: after(() => this.showMenu()),
-      retry: after(() => (r.challenge ? this.playChallenge() : this.startLevel(r.level))),
-      next: after(() => this.play(r.level + 1)),
+      retry: after(() => this.betweenLevels(r.level, () => (r.challenge ? this.playChallenge() : this.startLevel(r.level)))),
+      next: after(() => this.betweenLevels(r.level, () => this.play(r.level + 1))),
     });
   },
 
   onDefeat(r) {
-    Progress.recordDefeat(r);
+    // The result is recorded only when the player leaves this window:
+    // a second chance or "keep all coins" can still change it.
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      Progress.recordDefeat(r);
+    };
     const m = this.modal({
       cls: 'result defeat',
       html: `
         <h2>ТЫ ПОГИБ</h2>
-        <p class="sub">Уровень ${r.level} · дошёл до волны ${r.wave}/${r.waves}</p>
+        <p class="sub">${r.challenge ? 'Испытание дня' : `Уровень ${r.level}`} · дошёл до волны ${r.wave}/${r.waves}</p>
         <div class="result-stats">☠ ${r.kills}</div>
-        <div class="rewards"><span class="coins">● +${r.coins}</span><small>половина собранного</small></div>
-        <p class="hint">Улучши оружие в Арсенале или попробуй другого героя.</p>
+        <div class="rewards"><span class="coins" data-ref="coins">● +${r.coins}</span><small data-ref="coins-note">половина собранного</small></div>
+        <div class="buttons ad-row">
+          ${r.canRevive ? '<button class="btn ad" data-action="revive">♥ Второй шанс ▶</button>' : ''}
+          ${r.allCoins > r.coins ? `<button class="btn ad" data-action="keep">● Сохранить все ${r.allCoins} ▶</button>` : ''}
+        </div>
         <div class="buttons">
           <button class="btn" data-action="menu">В меню</button>
           <button class="btn" data-action="arsenal">Арсенал</button>
           <button class="btn primary" data-action="retry">Заново</button>
         </div>`,
     });
+    const q = sel => m.el.querySelector(sel);
     Object.assign(m.actions, {
-      menu: () => this.showMenu(),
-      arsenal: () => this.showMenu('arsenal'),
-      retry: () => (r.challenge ? this.playChallenge() : this.startLevel(r.level)),
+      revive: () => Platform.showRewarded('Второй шанс').then(ok => {
+        if (!ok || Game.state !== 'defeat') return;
+        this.closeModal(m);
+        Game.revive();
+      }),
+      keep: () => Platform.showRewarded('Сохранить монеты').then(ok => {
+        if (!ok) return;
+        r.coins = r.allCoins;
+        q('[data-ref="coins"]').textContent = `● +${r.coins}`;
+        q('[data-ref="coins-note"]').textContent = 'все монеты сохранены';
+        const btn = q('[data-action="keep"]');
+        if (btn) btn.remove();
+      }),
+      menu: () => { settle(); this.showMenu(); },
+      arsenal: () => { settle(); this.showMenu('arsenal'); },
+      retry: () => {
+        settle();
+        this.betweenLevels(r.level, () => (r.challenge ? this.playChallenge() : this.startLevel(r.level)));
+      },
     });
+  },
+
+  // Full-screen ad between levels (not in the first levels, rate-limited).
+  betweenLevels(level, then) {
+    if (level < 3) return then();
+    Platform.showInterstitial().then(() => then());
   },
 
   showNewWeapon(w, then) {
