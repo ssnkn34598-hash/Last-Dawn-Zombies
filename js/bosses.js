@@ -24,10 +24,10 @@ const Bosses = {
     const z = {
       type: 'boss', id, boss: true, def, x, y,
       r: def.radius,
-      hp: def.hp,
-      maxHp: def.hp,
+      hp: game.config.bossHp || def.hp,
+      maxHp: game.config.bossHp || def.hp,
       speed: def.speed,
-      damage: def.damage,
+      damage: Math.round(def.damage * (game.config.bossDamage || 1)),
       dmgMul: 1,
       mass: 30,
       state: 'rising',

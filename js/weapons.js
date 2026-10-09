@@ -46,7 +46,7 @@ const Weapons = {
         for (let i = 0; i < n; i++) {
           const a = angle + (n > 1 ? (i / (n - 1) - 0.5) * w.spread : 0) + (Math.random() - 0.5) * w.spread * (n > 1 ? 0.3 : 1);
           const sp = w.speed * (n > 1 ? 0.85 + Math.random() * 0.3 : 1);
-          this.spawn(w, m.x, m.y, a, sp, { radius: 2, pierce: 0 });
+          this.spawn(w, m.x, m.y, a, sp, { radius: 2, pierce: w.pierce || 0 });
         }
         Fx.flash(m.x, m.y, n > 1 ? 30 : 20, 'rgba(255,220,140,1)', 0.06);
         Fx.shell(h.x + Math.cos(angle) * 10, h.y + Math.sin(angle) * 10, angle);

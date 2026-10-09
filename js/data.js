@@ -46,7 +46,7 @@ const WEAPONS = [
   { id: 'tesla', unlock: 33, desc: { ru: 'Молния перескакивает между врагами.', en: 'Lightning jumps between enemies.' },    name: { ru: 'Тесла', en: 'Tesla' },         type: 'tesla',   damage: 22, rate: 3,   range: 330, chains: 5, chainRange: 170, color: '#8fd8ff' },
   { id: 'plasma', unlock: 45, desc: { ru: 'Сгусток плазмы прожигает насквозь.', en: 'Plasma bolts burn right through.' },   name: { ru: 'Плазмаган', en: 'Plasma Gun' },     type: 'plasma',  damage: 32, rate: 3.2, range: 480, speed: 620, pierce: 3, radius: 45, color: '#c46bff' },
   { id: 'rocket', unlock: 60, desc: { ru: 'Самонаводящаяся ракета, огромный взрыв.', en: 'Homing rockets, huge explosions.' },   name: { ru: 'Ракетница', en: 'Rocket Launcher' },     type: 'rocket',  damage: 120, rate: 0.75, range: 560, speed: 260, radius: 140, color: '#ff5a3a' },
-  { id: 'minigun', unlock: 75, desc: { ru: 'Шквал пуль без остановки.', en: 'A non-stop hail of bullets.' },  name: { ru: 'Пулемёт', en: 'Machine Gun' },       type: 'bullet',  damage: 8,  rate: 20,  range: 440, speed: 1050, spread: 0.16, color: '#ffe8a8' },
+  { id: 'minigun', unlock: 75, desc: { ru: 'Шквал пуль без остановки.', en: 'A non-stop hail of bullets.' },  name: { ru: 'Пулемёт', en: 'Machine Gun' },       type: 'bullet',  damage: 13, rate: 20,  range: 440, speed: 1050, spread: 0.16, pierce: 1, color: '#ffe8a8' },
 ];
 
 // behavior: chase | lunge | ranged | explode | scream | leap
@@ -139,7 +139,7 @@ const BOSSES = {
     phrase: { ru: 'Мои дети голодны.', en: 'My children are hungry.' }, ragePhrase: { ru: 'Плодитесь!', en: 'Multiply!' },
   },
   final: {
-    name: { ru: 'Нулевой пациент', en: 'Patient Zero' }, level: 100, mark: 'final', hp: 4200, speed: 68, radius: 44, damage: 32,
+    name: { ru: 'Нулевой пациент', en: 'Patient Zero' }, level: 100, mark: 'final', hp: 3200, speed: 68, radius: 44, damage: 32,
     color: '#6a7a6a', cloth: '#2a1e2a', minion: 'runner', phases: 3,
     phaseAttacks: [
       ['charge', 'radial', 'slam', 'spawn'],
@@ -205,9 +205,9 @@ const ECONOMY = {
   heroMaxLevel: 10,
   weaponCost: lvl => Math.round(60 * Math.pow(1.45, lvl - 1) / 10) * 10,
   heroCost: lvl => Math.round(90 * Math.pow(1.5, lvl - 1) / 10) * 10,
-  weaponDamagePerLevel: 0.12,
+  weaponDamagePerLevel: 0.15,
   weaponRatePerLevel: 0.03,
-  heroHpPerLevel: 0.08,
+  heroHpPerLevel: 0.1,
   heroSkillPerLevel: 0.1,
   bossGold: 25,          // первая победа над боссом
   threeStarGold: 2,      // первые три звезды на уровне
@@ -303,33 +303,61 @@ function levelConfig(n) {
   const waveCount = n < 4 ? 2 : n < 15 ? 3 : n < 50 ? 4 : 5;
   // Boss levels: shorter run-up, the last wave is the boss with a few adds.
   const normalWaves = boss ? (boss === 'final' ? 2 : waveCount - 1) : waveCount;
+
+  // The number of zombies grows smoothly with the level and is split between the
+  // waves (later waves are bigger), so adding a wave doesn't make a spike.
+  // A level that debuts a new enemy is a bit lighter, to learn it in peace.
+  const levelTotal = Math.round((16 + 2.9 * n + 0.012 * n * n) * (boss ? 0.65 : 1) * (newEnemy && n > 1 ? (n < 10 ? 0.95 : 0.85) : 1));
+  const shares = [];
+  for (let w = 0; w < normalWaves; w++) shares.push(1 + w * 0.25);
+  const shareSum = shares.reduce((a, b) => a + b, 0);
+
+  // Tough types are rarer (weight falls with health); a debuting type gets a
+  // gentle boost instead of flooding the level.
+  const others = types.filter(t => t !== 'walker');
+  const weights = others.map(t => Math.pow(32 / ZOMBIES[t].hp, 0.6) * (t === newEnemy ? 1.4 : 1));
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+  const pickOther = () => {
+    let r = rnd() * weightSum;
+    for (let i = 0; i < others.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return others[i];
+    }
+    return others[others.length - 1];
+  };
+
   const waves = [];
   let total = 0;
   for (let w = 0; w < normalWaves; w++) {
-    const count = Math.round(7 + n * 0.55 + w * (3 + n * 0.08));
+    const count = Math.max(6, Math.round(levelTotal * shares[w] / shareSum));
     const zombies = {};
     for (let i = 0; i < count; i++) {
-      // Walkers are the backbone; newer types are rarer, the newest a bit more common on its debut.
-      let type = 'walker';
-      if (types.length > 1 && rnd() > 0.45) {
-        type = types[1 + Math.floor(rnd() * (types.length - 1))];
-        if (newEnemy && newEnemy !== 'walker' && rnd() < 0.15) type = newEnemy;
-      }
+      // Walkers are the backbone of every wave.
+      const type = others.length && rnd() > 0.45 ? pickOther() : 'walker';
       zombies[type] = (zombies[type] || 0) + 1;
     }
     waves.push({
       zombies,
       interval: Math.max(0.3, 1.1 - n * 0.008 - w * 0.05),
-      maxAlive: Math.min(40, 10 + Math.floor(n * 0.3) + w * 2),
+      maxAlive: Math.min(30, 10 + Math.floor(n * 0.2) + w * 2),
     });
     total += count;
   }
   let bossTime = 0;
+  let bossHp = 0, bossDamage = 1;
+  const mods = {
+    hp: 1 + (n - 1) * 0.022,
+    speed: 1 + Math.min(0.25, (n - 1) * 0.003),
+    damage: 1 + (n - 1) * 0.008,
+  };
   if (boss) {
     const b = BOSSES[boss];
     const adds = 4 + Math.floor(n / 10);
     waves.push({ boss, zombies: { [b.minion]: adds }, interval: 2.6, maxAlive: 6 });
     total += adds + 1;
+    // Bosses grow with the level like the horde does (damage a bit slower).
+    bossHp = Math.round(b.hp * mods.hp);
+    bossDamage = Math.sqrt(mods.damage);
     bossTime = (b.hp * (b.phases || 1)) / 55;
   }
 
@@ -352,11 +380,9 @@ function levelConfig(n) {
     total,
     newEnemy,
     boss,
-    mods: {
-      hp: 1 + (n - 1) * 0.035,
-      speed: 1 + Math.min(0.25, (n - 1) * 0.003),
-      damage: 1 + (n - 1) * 0.02,
-    },
+    mods,
+    bossHp,
+    bossDamage,
     stars: pair.map(type => ({ type, value: goalValue[type] })),
     reward: 20 + n * 4,
   };
