@@ -1,0 +1,20 @@
+{
+  "name": "rassvet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Последний рассвет — зомби-шутер для Яндекс Игр и VK Игр",
+  "homepage": "./",
+  "scripts": {
+    "build:yandex": "node build.js yandex",
+    "build:vk": "node build.js vk",
+    "build": "node build.js all",
+    "deploy:vk": "npm run build:vk && vk-miniapps-deploy",
+    "balance": "node tools/balance.js"
+  },
+  "config": {
+    "vkGroupId": 0
+  },
+  "devDependencies": {
+    "@vkontakte/vk-miniapps-deploy": "1.0.2"
+  }
+}

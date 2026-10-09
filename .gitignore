@@ -1,0 +1,5 @@
+node_modules/
+*.png
+!assets/**/*.png
+dist/
+*.zip

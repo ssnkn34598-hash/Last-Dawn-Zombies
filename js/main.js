@@ -1,0 +1,314 @@
+// Entry point: canvas scaling, input, rotate screen, main loop.
+
+const LOGICAL_H = 540;
+
+const canvas = document.getElementById('game');
+// Opaque canvas: cheaper compositing on phones.
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// Adaptive quality: if the frame rate stays low, render at a lower resolution
+// and keep fewer particles. Only steps down, never back up (no flicker).
+const Quality = {
+  level: 0,
+  dprCaps: [2, 1.5, 1.1],
+  particles: [700, 450, 260],
+  samples: 0,
+  sum: 0,
+  checkAt: 0,
+
+  bad: 0,
+
+  track(rawDt, now) {
+    if (!booted || document.hidden || view.paused || Platform.suspended || rawDt > 0.25) return;
+    if (!this.checkAt) this.checkAt = now + 4000; // warm-up after loading
+    this.sum += rawDt;
+    this.samples++;
+    if (now < this.checkAt) return;
+    this.checkAt = now + 2000;
+    const avg = this.samples > 30 ? this.sum / this.samples : 0;
+    this.sum = 0;
+    this.samples = 0;
+    // Below ~50 FPS for two 2-second windows in a row → step down.
+    this.bad = avg > 1 / 50 ? this.bad + 1 : 0;
+    if (this.bad >= 2 && this.level < this.dprCaps.length - 1) {
+      this.bad = 0;
+      this.level++;
+      Fx.maxParticles = this.particles[this.level];
+      Render.lowFx = true;
+      resize();
+    }
+  },
+};
+
+const view = { w: 960, h: LOGICAL_H, scale: 1 };
+
+const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ?debug enables test keys; ?debug&level=N starts at level N.
+const params = new URLSearchParams(location.search);
+Game.debug = params.has('debug');
+const startLevel = Game.debug && params.get('level') ? Number(params.get('level')) || 1 : 1;
+
+function resize() {
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, Quality.dprCaps[Quality.level]);
+
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+
+  view.scale = canvas.height / LOGICAL_H;
+  view.w = canvas.width / view.scale;
+  view.h = LOGICAL_H;
+
+  const portrait = isTouch && cssH > cssW;
+  document.body.classList.toggle('portrait', portrait);
+  view.paused = portrait;
+
+  if (Game.hero) Game.clampCamera(view);
+}
+
+// ---------- Input ----------
+
+function makeStick(color) {
+  return { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0, radius: 60, color };
+}
+
+const input = {
+  touch: isTouch,
+  keys: new Set(),
+  joystick: makeStick('#ffb547'),   // left: movement
+  aimStick: makeStick('#ff6a4a'),   // right: manual aim + fire
+  pointer: null,                    // mouse position, logical screen coords
+  mouseDown: false,
+
+  stickValue(j) {
+    const dx = j.x - j.ox, dy = j.y - j.oy;
+    const d = Math.hypot(dx, dy);
+    if (d < j.radius * 0.12) return { x: 0, y: 0 };
+    const m = Math.min(1, d / j.radius);
+    return { x: (dx / d) * m, y: (dy / d) * m };
+  },
+
+  move() {
+    if (this.joystick.active) return this.stickValue(this.joystick);
+    const k = this.keys;
+    let x = 0, y = 0;
+    if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
+    if (k.has('KeyW') || k.has('ArrowUp')) y -= 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
+    const len = Math.hypot(x, y);
+    return len ? { x: x / len, y: y / len } : { x: 0, y: 0 };
+  },
+
+  controls() {
+    return {
+      move: this.move(),
+      stick: this.aimStick.active ? this.stickValue(this.aimStick) : null,
+      pointer: this.pointer,
+      firing: this.mouseDown,
+    };
+  },
+};
+
+const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+window.addEventListener('keydown', e => {
+  if (MOVE_KEYS.includes(e.code)) {
+    input.keys.add(e.code);
+    e.preventDefault();
+    return;
+  }
+  if (e.repeat) return;
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+  if (digit) {
+    const n = Number(digit[1]);
+    if (Game.state === 'perk') {
+      if (n >= 1 && n <= 3) Game.press('perk' + (n - 1));
+    } else if (Game.debug) {
+      // Debug only: 1–9, 0 — weapons.
+      Game.setWeapon(n === 0 ? 9 : n - 1);
+    }
+  } else if (e.code === 'KeyM' && Game.debug) {
+    // Debug only; players switch aim in the settings.
+    Game.toggleAim();
+  } else if (e.code === 'KeyK' && Game.debug) {
+    // Debug: hurt the boss by 30% or clear the current wave.
+    Game.debugSkip();
+  } else if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (Game.state === 'play') Game.pause();
+  } else if ((e.code === 'KeyE' || e.code === 'Space') && Game.state === 'play') {
+    Game.useSkill();
+    e.preventDefault();
+  } else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+    if (Game.state === 'intro') Game.press('start');
+    else if (Game.state === 'ending') Game.press(Game.stateTime > ENDING_CREDITS_END ? 'endnext' : 'skip');
+    e.preventDefault();
+  }
+});
+
+// Leaving the tab or app pauses the fight.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && Game.state === 'play') Game.pause();
+});
+// VK: the mini app was minimised (VKWebAppViewHide).
+Platform.on('hide', () => {
+  if (Game.state === 'play') Game.pause();
+});
+window.addEventListener('keyup', e => input.keys.delete(e.code));
+window.addEventListener('blur', () => {
+  if (Game.state === 'play' && !Game.debug) Game.pause();
+  input.keys.clear();
+  input.mouseDown = false;
+  input.joystick.active = false;
+  input.aimStick.active = false;
+});
+
+// Screen → logical coordinates
+function toLogical(t) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (t.clientX - rect.left) / rect.width * view.w,
+    y: (t.clientY - rect.top) / rect.height * view.h,
+  };
+}
+
+// Mouse (PC manual aim)
+canvas.addEventListener('mousemove', e => { input.pointer = toLogical(e); });
+canvas.addEventListener('mousedown', e => {
+  input.pointer = toLogical(e);
+  if (e.button !== 0) return;
+  const btn = hitButton(input.pointer);
+  if (btn) { Game.press(btn); return; }
+  if (Game.state === 'play') input.mouseDown = true;
+});
+window.addEventListener('mouseup', e => { if (e.button === 0) input.mouseDown = false; });
+canvas.addEventListener('mouseleave', () => { input.pointer = null; });
+
+function hitButton(p) {
+  for (const [name, b] of Object.entries(Render.buttons)) {
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return name;
+  }
+  return null;
+}
+
+function startStick(j, t, p) {
+  j.active = true;
+  j.id = t.identifier;
+  j.ox = j.x = p.x;
+  j.oy = j.y = p.y;
+}
+
+// Floating joysticks: left half moves, right half aims (manual mode only).
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  input.pointer = null;
+  for (const t of e.changedTouches) {
+    const p = toLogical(t);
+    const btn = hitButton(p);
+    if (btn) { Game.press(btn); continue; }
+    if (Game.state !== 'play') continue;
+
+    if (p.x < view.w / 2) {
+      if (!input.joystick.active) startStick(input.joystick, t, p);
+    } else if (Game.aimMode === 'manual' && !input.aimStick.active) {
+      startStick(input.aimStick, t, p);
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    for (const j of [input.joystick, input.aimStick]) {
+      if (!j.active || t.identifier !== j.id) continue;
+      const p = toLogical(t);
+      const dx = p.x - j.ox, dy = p.y - j.oy;
+      const d = Math.hypot(dx, dy);
+      // Drag the base along when the finger goes past the edge.
+      if (d > j.radius) {
+        const over = d - j.radius;
+        j.ox += (dx / d) * over;
+        j.oy += (dy / d) * over;
+      }
+      j.x = p.x;
+      j.y = p.y;
+    }
+  }
+}, { passive: false });
+
+function endTouch(e) {
+  for (const t of e.changedTouches) {
+    for (const j of [input.joystick, input.aimStick]) {
+      if (t.identifier === j.id) {
+        j.active = false;
+        j.id = null;
+      }
+    }
+  }
+}
+canvas.addEventListener('touchend', endTouch);
+canvas.addEventListener('touchcancel', endTouch);
+
+// Block page scroll / zoom gestures on mobile.
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------- Loop ----------
+
+let last = performance.now();
+
+let booted = false;
+
+function frame(now) {
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(0.05, rawDt);
+  last = now;
+  Quality.track(rawDt, now);
+  ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
+
+  if (!booted) {
+    // Waiting for the platform (SDK, cloud save).
+    ctx.fillStyle = '#07090d';
+    ctx.fillRect(0, 0, view.w, view.h);
+    Render.hudText(ctx, t('loading'), view.w / 2, view.h / 2, '#ffcf7a', 26, 'center');
+    requestAnimationFrame(frame);
+    return;
+  }
+
+  // Ads and game_api_pause freeze the game entirely.
+  if (!view.paused && !Platform.suspended) {
+    Game.update(dt, input.controls(), view);
+  }
+  Platform.setGameplay(Game.state === 'play' && !view.paused && !Platform.suspended && !document.hidden);
+
+  Render.draw(ctx, Game, view, input);
+
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
+
+resize();
+Game.touch = isTouch;
+Sfx.init();
+// Browser language until the SDK and the save are loaded.
+I18N.setLang(I18N.detect());
+canvas.style.cursor = 'crosshair';
+requestAnimationFrame(t => { last = t; frame(t); });
+
+Platform.init().then(() => {
+  UI.init();
+  // ?debug&level=N jumps straight into a level, ?debug&tutorial replays the
+  // tutorial; otherwise start in the menu.
+  if (Game.debug && params.has('tutorial')) UI.startTutorial();
+  else if (Game.debug && params.get('level')) UI.startLevel(startLevel);
+  else UI.showMenu();
+  Game.clampCamera(view);
+  booted = true;
+  Platform.ready();
+});

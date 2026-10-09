@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Последний рассвет</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Platform scripts are marked with data-platform: build.js keeps only the
+       ones for the target (npm run build:yandex / build:vk). -->
+  <script src="js/config.js"></script>
+  <script src="js/platform.js"></script>
+  <!-- VK Bridge from a local file; platform-vk.js sends VKWebAppInit at once. -->
+  <script src="js/vendor/vk-bridge.min.js" data-platform="vk"></script>
+  <script src="js/platform-vk.js" data-platform="vk"></script>
+  <script data-platform="yandex">
+    // Yandex Games SDK lives at /sdk.js on Yandex hosting. Locally (file:// or
+    // localhost) there is no SDK, and the game shows demo ads instead.
+    window.__sdkReady = new Promise(function (resolve) {
+      var host = location.hostname;
+      if (!/^https?:$/.test(location.protocol) || host === 'localhost' || host === '127.0.0.1') return resolve(null);
+      var s = document.createElement('script');
+      s.src = '/sdk.js';
+      s.onload = function () { resolve(window.YaGames || null); };
+      s.onerror = function () { resolve(null); };
+      document.head.appendChild(s);
+    });
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="ui"></div>
+
+  <div id="rotate" aria-hidden="true">
+    <div class="rotate-phone"></div>
+    <div class="rotate-text">Поверни телефон</div>
+    <div class="rotate-sub">Играть можно только горизонтально</div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/platform-yandex.js" data-platform="yandex"></script>
+  <script src="js/platform-local.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/weapons.js"></script>
+  <script src="js/zombies.js"></script>
+  <script src="js/bosses.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/tutorial.js"></script>
+  <script src="js/daily.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
