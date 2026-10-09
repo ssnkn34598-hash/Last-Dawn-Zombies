@@ -2298,7 +2298,8 @@ const Render = {
     this.roundRect(ctx, rx, ay, pw, 30, 8); ctx.fill();
     const auto = game.aimMode === 'auto';
     this.hudText(ctx, t(auto ? 'hud.aimAuto' : 'hud.aimManual'), rx + 12, ay + 16, auto ? '#8fd8ff' : '#ffb547', 14);
-    if (!input.touch) this.hudText(ctx, 'M', rx + pw - 12, ay + 16, 'rgba(255,255,255,0.5)', 13, 'right');
+    // M switches aim only in debug; players switch it in the settings.
+    if (!input.touch && game.debug) this.hudText(ctx, 'M', rx + pw - 12, ay + 16, 'rgba(255,255,255,0.5)', 13, 'right');
 
     const w = game.weapon;
     const wy = ay + 38;
