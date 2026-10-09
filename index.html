@@ -7,7 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Последний рассвет</title>
   <link rel="stylesheet" href="css/style.css">
-  <script>
+  <!-- Platform scripts are marked with data-platform: build.js keeps only the
+       ones for the target (npm run build:yandex / build:vk). -->
+  <script src="js/config.js"></script>
+  <script src="js/platform.js"></script>
+  <!-- VK Bridge from a local file; platform-vk.js sends VKWebAppInit at once. -->
+  <script src="js/vendor/vk-bridge.min.js" data-platform="vk"></script>
+  <script src="js/platform-vk.js" data-platform="vk"></script>
+  <script data-platform="yandex">
     // Yandex Games SDK lives at /sdk.js on Yandex hosting. Locally (file:// or
     // localhost) there is no SDK, and the game shows demo ads instead.
     window.__sdkReady = new Promise(function (resolve) {
@@ -33,7 +40,8 @@
 
   <script src="js/data.js"></script>
   <script src="js/i18n.js"></script>
-  <script src="js/platform.js"></script>
+  <script src="js/platform-yandex.js" data-platform="yandex"></script>
+  <script src="js/platform-local.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/render.js"></script>
   <script src="js/fx.js"></script>

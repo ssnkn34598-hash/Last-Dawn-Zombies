@@ -701,6 +701,32 @@ canvas.raven.big { width: 96px; height: 96px; display: block; margin: 0 auto -4p
   font-size: 15px;
   animation: pop-in 0.25s ease-out;
 }
+/* Above open windows; never blocks their buttons. */
+.toast.over { z-index: 5; pointer-events: none; bottom: 14px; }
+
+/* ---- VK community window ---- */
+#modals { z-index: 4; }
+.social-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 10px; }
+.social-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 2px solid #4a3b26;
+  background: #1a1612;
+  color: var(--text);
+  font: inherit;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+.social-row:hover { border-color: var(--amber); }
+.social-row i { font-style: normal; width: 24px; text-align: center; color: var(--amber); font-size: 20px; }
+.social-row span { flex: 1; }
+.social-row small { color: var(--muted); }
+.social-row small.coins { color: #ffd23a; }
 
 /* ---- Daily: tasks, challenge, chests, login ---- */
 .btn.small { min-height: 38px; padding: 0 10px; font-size: 13px; border-radius: 10px; }
@@ -914,6 +940,8 @@ canvas.raven.big { width: 96px; height: 96px; display: block; margin: 0 auto -4p
 @keyframes burst { from { transform: scale(1); opacity: 1; } to { transform: scale(18); opacity: 0; } }
 
 @media (max-height: 430px) {
+  .social-list { gap: 6px; margin: 8px 0 8px; }
+  .social-row { min-height: 40px; }
   .hscroll.daily .dcard { width: 228px; padding: 8px 10px; gap: 4px; }
   .chest-ico { width: 30px; height: 26px; }
   .chest-row { gap: 6px; padding: 5px 6px; }

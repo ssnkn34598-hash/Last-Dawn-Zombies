@@ -1,21 +1,39 @@
-// Platform layer: Yandex Games SDK (ads, gameplay markers, pause events,
-// cloud saves) with a local fallback. Everything that talks to the outside
-// world goes through here. No purchases and no external links.
+// Platform layer: one interface for the game, with adapters for Yandex Games,
+// VK Games and a local fallback (platform-yandex.js, platform-vk.js,
+// platform-local.js). Everything that talks to the outside world goes through
+// here. No purchases and no external links.
+//
+// An adapter implements:
+//   name                       'yandex' | 'vk' | 'local'
+//   async init(Platform)       → true if this platform is available
+//   ready()                    the game has loaded (menu shown)
+//   gameplay(active)           the player is / isn't actually playing
+//   langHint()                 platform language code or ''
+//   async loadCloud()          → saved object or null
+//   async saveCloud(data)      store the save in the cloud
+//   async clearCloud()
+//   rewarded(placement)        → Promise<boolean> (give the reward?)
+//   interstitial()             → Promise<boolean>
+//   banner(show)
+//   socialAvailable(id), social(id) → Promise<boolean>   (optional)
 
 const SAVE_KEY = 'rassvet_save_v1';
 const INTERSTITIAL_COOLDOWN = 90 * 1000;   // between full-screen ads
-const CLOUD_SAVE_DELAY = 3000;             // debounce for player.setData
+const CLOUD_SAVE_DELAY = 3000;             // debounce for cloud writes
+
+const PlatformAdapters = {};               // filled by the adapter files
 
 const Platform = {
-  ysdk: null,
-  player: null,
+  adapter: null,
   cache: null,          // save data loaded at start (newest of local / cloud)
-  suspended: false,     // game frozen (ad on screen or game_api_pause)
+  suspended: false,     // game frozen (ad on screen, platform pause, app hidden)
   muted: false,         // sound off for the same reasons
   adShowing: false,
   gameplayOn: false,
+  bannerOn: undefined,
   lastAdAt: 0,
   listeners: {},
+  ysdk: null,           // set by the Yandex adapter (kept for language detection & tests)
 
   on(name, fn) {
     (this.listeners[name] = this.listeners[name] || []).push(fn);
@@ -27,40 +45,60 @@ const Platform = {
 
   // ---------- Start-up ----------
 
+  // Which adapters to try, in order, for the configured platform.
+  candidates() {
+    const p = (typeof GAME_CONFIG !== 'undefined' && GAME_CONFIG.platform) || 'auto';
+    if (p === 'yandex') return ['yandex', 'local'];
+    if (p === 'vk') return ['vk', 'local'];
+    if (p === 'local') return ['local'];
+    // auto: VK launch parameters win, then Yandex, then local.
+    return ['vk', 'yandex', 'local'];
+  },
+
   async init() {
-    const YaGames = await Promise.race([
-      window.__sdkReady || Promise.resolve(null),
-      new Promise(r => setTimeout(() => r(null), 4000)),
-    ]);
-    if (YaGames && YaGames.init) {
+    for (const name of this.candidates()) {
+      const a = PlatformAdapters[name];
+      if (!a) continue;
+      let ok = false;
       try {
-        this.ysdk = await YaGames.init();
-        this.ysdk.on && this.ysdk.on('game_api_pause', () => this.suspend('api'));
-        this.ysdk.on && this.ysdk.on('game_api_resume', () => this.resume('api'));
-        try {
-          this.player = await this.ysdk.getPlayer({ scopes: false });
-        } catch (e) {
-          this.player = null;
-        }
+        ok = await a.init(this);
       } catch (e) {
-        this.ysdk = null;
+        ok = false;
+      }
+      if (ok) {
+        this.adapter = a;
+        break;
       }
     }
+    if (!this.adapter) this.adapter = PlatformAdapters.local;
     await this.loadSaves();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.flushCloud();
     });
   },
 
+  get name() {
+    return this.adapter ? this.adapter.name : 'local';
+  },
+
   get hasSdk() {
-    return !!this.ysdk;
+    return this.name !== 'local';
+  },
+
+  // Platform language code. Before init only VK knows it (from the URL).
+  langHint() {
+    try {
+      const a = this.adapter || (typeof VK_LAUNCHED !== 'undefined' && VK_LAUNCHED && PlatformAdapters.vk);
+      return (a && a.langHint && a.langHint()) || '';
+    } catch (e) {
+      return '';
+    }
   },
 
   // The game is loaded and ready to play (shown the menu).
   ready() {
     try {
-      const api = this.ysdk && this.ysdk.features && this.ysdk.features.LoadingAPI;
-      if (api && api.ready) api.ready();
+      this.adapter && this.adapter.ready && this.adapter.ready();
     } catch (e) {
       // SDK hiccup — the game works anyway.
     }
@@ -71,8 +109,7 @@ const Platform = {
     if (active === this.gameplayOn) return;
     this.gameplayOn = active;
     try {
-      const api = this.ysdk && this.ysdk.features && this.ysdk.features.GameplayAPI;
-      if (api) active ? api.start() : api.stop();
+      this.adapter && this.adapter.gameplay && this.adapter.gameplay(active);
     } catch (e) {
       // ignore
     }
@@ -115,17 +152,14 @@ const Platform = {
   async loadSaves() {
     const local = this.readLocal();
     let cloud = null;
-    if (this.player && this.player.getData) {
-      try {
-        const data = await this.player.getData(['save']);
-        cloud = data && data.save ? data.save : null;
-      } catch (e) {
-        cloud = null;
-      }
+    try {
+      cloud = this.adapter.loadCloud ? await this.adapter.loadCloud() : null;
+    } catch (e) {
+      cloud = null;
     }
     // Keep the newest of the two.
-    const t = s => (s && s.savedAt) || 0;
-    this.cache = t(cloud) > t(local) ? cloud : local;
+    const ts = s => (s && s.savedAt) || 0;
+    this.cache = ts(cloud) > ts(local) ? cloud : local;
     if (this.cache && this.cache === cloud) {
       try { localStorage.setItem(SAVE_KEY, JSON.stringify(cloud)); } catch (e) { /* storage blocked */ }
     }
@@ -143,7 +177,7 @@ const Platform = {
     } catch (e) {
       // Storage blocked (private mode) — cloud still works.
     }
-    if (this.player) {
+    if (this.adapter && this.adapter.saveCloud) {
       clearTimeout(this.cloudTimer);
       this.cloudTimer = setTimeout(() => this.flushCloud(), CLOUD_SAVE_DELAY);
     }
@@ -152,9 +186,9 @@ const Platform = {
 
   flushCloud() {
     clearTimeout(this.cloudTimer);
-    if (!this.player || !this.cache) return;
+    if (!this.cache || !this.adapter || !this.adapter.saveCloud) return;
     try {
-      const p = this.player.setData({ save: this.cache }, true);
+      const p = this.adapter.saveCloud(this.cache);
       if (p && p.catch) p.catch(() => {});
     } catch (e) {
       // retry on the next save
@@ -168,105 +202,74 @@ const Platform = {
       // nothing to clear
     }
     this.cache = null;
-    if (this.player) {
-      try {
-        const p = this.player.setData({ save: null }, true);
-        if (p && p.catch) p.catch(() => {});
-      } catch (e) {
-        // ignore
-      }
+    clearTimeout(this.cloudTimer);
+    try {
+      const p = this.adapter && this.adapter.clearCloud && this.adapter.clearCloud();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) {
+      // ignore
     }
   },
 
   // ---------- Ads ----------
 
-  // Rewarded video. Resolves true only if the reward should be given.
-  showRewarded(placement) {
-    if (this.adShowing) return Promise.resolve(false);
+  // Wraps an adapter ad call: freezes and mutes the game while it runs.
+  runAd(call) {
     this.adShowing = true;
     this.suspend('ad');
-    const done = rewarded => {
+    const done = result => {
       this.adShowing = false;
       this.lastAdAt = Date.now();
       this.resume('ad');
-      return rewarded;
+      return result;
     };
-    if (!this.ysdk) return DemoAd.show('rewarded', placement).then(() => done(true));
-    return new Promise(resolve => {
-      let rewarded = false;
-      try {
-        this.ysdk.adv.showRewardedVideo({
-          callbacks: {
-            onRewarded: () => { rewarded = true; },
-            onClose: () => resolve(done(rewarded)),
-            onError: () => resolve(done(false)),
-          },
-        });
-      } catch (e) {
-        resolve(done(false));
-      }
+    let p;
+    try {
+      p = Promise.resolve(call());
+    } catch (e) {
+      p = Promise.resolve(false);
+    }
+    return p.then(r => done(!!r), () => done(false));
+  },
+
+  // Rewarded video. Resolves true only if the reward should be given.
+  showRewarded(placement) {
+    if (this.adShowing) return Promise.resolve(false);
+    return this.runAd(() => this.adapter.rewarded(placement)).then(ok => {
+      if (!ok) this.emit('adUnavailable');
+      return ok;
     });
   },
 
   // Full-screen ad between levels (rate-limited). Always resolves.
   showInterstitial() {
     if (this.adShowing || Date.now() - this.lastAdAt < INTERSTITIAL_COOLDOWN) return Promise.resolve(false);
-    this.adShowing = true;
-    this.suspend('ad');
-    const done = shown => {
-      this.adShowing = false;
-      this.lastAdAt = Date.now();
-      this.resume('ad');
-      return shown;
-    };
-    if (!this.ysdk) return DemoAd.show('interstitial').then(() => done(true));
-    return new Promise(resolve => {
-      try {
-        this.ysdk.adv.showFullscreenAdv({
-          callbacks: {
-            onClose: shown => resolve(done(!!shown)),
-            onError: () => resolve(done(false)),
-            onOffline: () => resolve(done(false)),
-          },
-        });
-      } catch (e) {
-        resolve(done(false));
-      }
-    });
+    return this.runAd(() => this.adapter.interstitial());
   },
 
   // Sticky banner: shown in the menu, hidden in battle.
   banner(show) {
     if (this.bannerOn === show) return;
     this.bannerOn = show;
-    if (!this.ysdk || !this.ysdk.adv) return;
     try {
-      const p = show ? this.ysdk.adv.showBannerAdv() : this.ysdk.adv.hideBannerAdv();
-      if (p && p.catch) p.catch(() => {});
+      this.adapter && this.adapter.banner && this.adapter.banner(show);
     } catch (e) {
-      // banners may be off for the game in the console
+      // banners may be off for the game
     }
   },
-};
 
-// Local stand-in for ads: a 2-second "demo ad" window.
-const DemoAd = {
-  show(kind, placement) {
-    return new Promise(resolve => {
-      const el = document.createElement('div');
-      el.className = 'demo-ad';
-      el.innerHTML = `
-        <div class="demo-ad-box">
-          <div class="demo-ad-title">${t('ad.demo')}</div>
-          <div class="demo-ad-sub">${t(kind === 'rewarded' ? 'ad.rewarded' : 'ad.interstitial')}${placement ? ` · ${placement}` : ''}</div>
-          <div class="demo-ad-bar"><i></i></div>
-          <div class="demo-ad-note">${t('ad.note')}</div>
-        </div>`;
-      document.body.appendChild(el);
-      setTimeout(() => {
-        el.remove();
-        resolve();
-      }, 2000);
-    });
+  // ---------- Social (VK) ----------
+
+  socialAvailable(id) {
+    return !!(this.adapter && this.adapter.socialAvailable && this.adapter.socialAvailable(id));
+  },
+
+  social(id) {
+    if (!this.socialAvailable(id)) return Promise.resolve(false);
+    try {
+      return Promise.resolve(this.adapter.social(id)).then(r => !!r, () => false);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
   },
 };

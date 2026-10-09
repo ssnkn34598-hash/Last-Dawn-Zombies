@@ -175,7 +175,22 @@ const STRINGS = {
     'ad.demo': 'Демо-реклама',
     'ad.rewarded': 'Реклама за награду',
     'ad.interstitial': 'Реклама между уровнями',
-    'ad.note': 'В Яндекс Играх здесь будет настоящая реклама',
+    'ad.note': 'На игровой платформе здесь будет настоящая реклама',
+    'ad.unavailable': 'Реклама сейчас недоступна, попробуй чуть позже',
+    'btn.social': 'Сообщество',
+    'social.title': 'Сообщество',
+    'social.sub': 'Зови друзей — вместе отбиваться веселее',
+    'social.invite': 'Пригласить друзей',
+    'social.wall': 'Рассказать на стене',
+    'social.share': 'Поделиться игрой',
+    'social.group': 'Вступить в сообщество',
+    'social.favorites': 'Добавить в избранное',
+    'social.home': 'Добавить на главный экран',
+    'social.notify': 'Включить уведомления',
+    'social.none': 'Здесь пока ничего нет',
+    'social.rewarded': 'Спасибо! ● +{n}',
+    'win.share': 'Поделиться',
+    'vk.wallText': 'Я держу оборону в «Последнем рассвете»! Присоединяйся — до утра надо дожить вместе.',
     'ad.perks': 'Другие улучшения',
     'ad.revive': 'Второй шанс',
     'ad.keep': 'Сохранить монеты',
@@ -428,7 +443,22 @@ const STRINGS = {
     'ad.demo': 'Demo ad',
     'ad.rewarded': 'Rewarded ad',
     'ad.interstitial': 'Ad between levels',
-    'ad.note': 'A real ad will play here on Yandex Games',
+    'ad.note': 'A real ad will play here on the game platform',
+    'ad.unavailable': 'No ad available right now, try again a bit later',
+    'btn.social': 'Community',
+    'social.title': 'Community',
+    'social.sub': 'Call your friends — holding the line is more fun together',
+    'social.invite': 'Invite friends',
+    'social.wall': 'Post on your wall',
+    'social.share': 'Share the game',
+    'social.group': 'Join the community',
+    'social.favorites': 'Add to favourites',
+    'social.home': 'Add to home screen',
+    'social.notify': 'Turn on notifications',
+    'social.none': 'Nothing here yet',
+    'social.rewarded': 'Thank you! ● +{n}',
+    'win.share': 'Share',
+    'vk.wallText': "I'm holding the line in The Last Dawn! Join me — we have to survive till morning together.",
     'ad.perks': 'Other perks',
     'ad.revive': 'Second chance',
     'ad.keep': 'Keep coins',
@@ -530,18 +560,14 @@ const I18N = {
   missingKeys: new Set(),
   rules: {},
 
-  // Yandex SDK language → saved choice → browser language.
+  // Saved choice → platform language (Yandex SDK / vk_language) → browser.
   detect(saved) {
     if (saved && LANGS.includes(saved)) return saved;
     let code = '';
-    try {
-      code = (Platform.ysdk && Platform.ysdk.environment && Platform.ysdk.environment.i18n && Platform.ysdk.environment.i18n.lang) || '';
-    } catch (e) {
-      code = '';
-    }
+    if (typeof Platform !== 'undefined') code = Platform.langHint();
     if (!code) code = (navigator.languages && navigator.languages[0]) || navigator.language || 'ru';
     code = code.toLowerCase().slice(0, 2);
-    // Russian for the CIS languages Yandex serves, English for everyone else.
+    // Russian for the CIS languages, English for everyone else.
     return ['ru', 'be', 'kk', 'uk', 'uz', 'ky', 'tg', 'hy', 'az'].includes(code) ? 'ru' : 'en';
   },
 

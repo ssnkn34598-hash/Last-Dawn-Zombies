@@ -154,6 +154,10 @@ window.addEventListener('keydown', e => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && Game.state === 'play') Game.pause();
 });
+// VK: the mini app was minimised (VKWebAppViewHide).
+Platform.on('hide', () => {
+  if (Game.state === 'play') Game.pause();
+});
 window.addEventListener('keyup', e => input.keys.delete(e.code));
 window.addEventListener('blur', () => {
   if (Game.state === 'play' && !Game.debug) Game.pause();

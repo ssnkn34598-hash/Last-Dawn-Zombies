@@ -29,6 +29,7 @@ const Progress = {
       seenWeapons: ['pistol'],
       bossesBeaten: [],
       claimed: [],
+      socialDone: [],
       stats: { kills: 0, levels: 0, bosses: 0, bestStreak: 0, upgrades: 0 },
     };
   },
@@ -185,6 +186,19 @@ const TABS = [
 ];
 
 
+// VK social actions shown in the "Community" window (platform-vk.js).
+const SOCIAL_ACTIONS = [
+  { id: 'invite', icon: '✉' },
+  { id: 'wall', icon: '✎' },
+  { id: 'share', icon: '↗' },
+  { id: 'group', icon: '☗' },
+  { id: 'favorites', icon: '★' },
+  { id: 'home', icon: '⌂' },
+  { id: 'notify', icon: '♪' },
+];
+// One-time reward per action — only when SOCIAL_REWARDS (config.js) is on.
+const SOCIAL_REWARD = { coins: 150 };
+
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
@@ -217,6 +231,7 @@ const UI = {
       if (ok) Game.rerollPerks();
     });
     Game.hooks.tutorialDone = () => this.onTutorialDone();
+    Platform.on('adUnavailable', () => this.toast(t('ad.unavailable'), true));
     Game.hooks.tutorialSkip = () => this.confirm(t('tut.skipTitle'), t('tut.skipText'), () => {
       Progress.data.tutorialOffered = true;
       Progress.save();
@@ -239,6 +254,7 @@ const UI = {
             <div class="chip gold" data-i18n-title="chip.gold"><b>◆</b><span data-bind="gold"></span></div>
             <div class="chip stars" data-i18n-title="chip.stars"><b>★</b><span data-bind="stars"></span></div>
             ${Game.debug ? '<button class="btn small debug" data-action="shift-day" data-i18n="debug.shiftDay"></button>' : ''}
+            ${Platform.name === 'vk' ? '<button class="icon-btn" data-action="social" data-i18n-title="btn.social">♥</button>' : ''}
             <button class="icon-btn" data-action="sound" data-i18n-title="btn.sound"><span data-bind="sound"></span></button>
             <button class="icon-btn" data-action="settings" data-i18n-title="btn.settings">⚙</button>
           </div>
@@ -294,10 +310,12 @@ const UI = {
     else if (Object.entries(HEROES).some(([id, h]) => !d.heroes[id] && d.gold >= h.gold)) Hints.trigger('menuHero');
   },
 
-  toast(text) {
+  // over: show above open windows (e.g. "no ad right now" on the result screen).
+  toast(text, over = false) {
     const el = document.getElementById('toast');
     el.querySelector('span').textContent = text;
     el.classList.remove('hidden');
+    el.classList.toggle('over', over);
     this.paintCanvases(el);
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => el.classList.add('hidden'), 5500);
@@ -763,6 +781,9 @@ const UI = {
       case 'settings':
         this.showSettings();
         break;
+      case 'social':
+        this.showSocial();
+        break;
       case 'equip':
         d.weapon = id;
         Progress.save();
@@ -890,6 +911,53 @@ const UI = {
 
   closeAllModals() {
     while (this.modals.length) this.closeModal(this.modals[this.modals.length - 1]);
+  },
+
+  // ---------- VK community window ----------
+
+  showSocial() {
+    const d = Progress.data;
+    const list = SOCIAL_ACTIONS.filter(a => Platform.socialAvailable(a.id));
+    const row = a => {
+      const reward = SOCIAL_REWARDS && !d.socialDone.includes(a.id)
+        ? `<small class="coins">● +${SOCIAL_REWARD.coins}</small>` : '';
+      const done = d.socialDone.includes(a.id) ? '<small>✓</small>' : '';
+      return `<button class="social-row" data-action="${a.id}"><i>${a.icon}</i><span>${t('social.' + a.id)}</span>${reward || done}</button>`;
+    };
+    const m = this.modal({
+      cls: 'social',
+      html: `
+        <h2>${t('social.title')}</h2>
+        <p class="sub">${t('social.sub')}</p>
+        <div class="social-list">${list.length ? list.map(row).join('') : `<p class="hint">${t('social.none')}</p>`}</div>
+        <div class="buttons"><button class="btn primary" data-action="close">${t('done')}</button></div>`,
+      onEscape: () => this.closeModal(m),
+    });
+    m.actions.close = () => this.closeModal(m);
+    for (const a of list) {
+      m.actions[a.id] = () => this.doSocial(a.id).then(() => {
+        this.closeModal(m);
+        this.showSocial();
+      });
+    }
+  },
+
+  // Runs a VK social action; gives the one-time reward if enabled.
+  doSocial(id) {
+    return Platform.social(id).then(ok => {
+      if (!ok) return false;
+      const d = Progress.data;
+      if (!d.socialDone.includes(id)) {
+        d.socialDone.push(id);
+        if (SOCIAL_REWARDS) {
+          d.coins += SOCIAL_REWARD.coins;
+          this.toast(t('social.rewarded', { n: SOCIAL_REWARD.coins }), true);
+        }
+        Progress.save();
+        this.render();
+      }
+      return true;
+    });
   },
 
   aimSwitch() {
@@ -1037,6 +1105,8 @@ const UI = {
       <li class="${g.state === 'ok' ? 'ok' : 'fail'}"><i>${g.state === 'ok' ? '✔' : '✘'}</i><span>${esc(g.text)}</span><small>${esc(g.progress || '')}</small></li>`).join('');
     const mm = Math.floor(r.time / 60), ss = String(Math.floor(r.time % 60)).padStart(2, '0');
     const last = r.level >= 100;
+    // VK: tell friends about the win (a post on the wall, or a plain share).
+    const share = Platform.socialAvailable('wall') ? 'wall' : Platform.socialAvailable('share') ? 'share' : null;
     const m = this.modal({
       cls: 'result victory',
       html: `
@@ -1046,7 +1116,10 @@ const UI = {
         <ul class="goals">${goals}</ul>
         <div class="result-stats">${t('win.stats', { kills: r.kills, time: `${mm}:${ss}`, best: r.best })}</div>
         <div class="rewards"><span class="coins" data-ref="coins">● +${rew.coins}</span>${rew.gold ? `<span class="gold">◆ +${rew.gold}</span>` : ''}</div>
-        ${rew.coins > 0 ? `<div class="buttons ad-row"><button class="btn ad" data-action="double">${t('win.double')}</button></div>` : ''}
+        ${rew.coins > 0 || share ? `<div class="buttons ad-row">
+          ${rew.coins > 0 ? `<button class="btn ad" data-action="double">${t('win.double')}</button>` : ''}
+          ${share ? `<button class="btn" data-action="share">${t('win.share')}</button>` : ''}
+        </div>` : ''}
         <div class="buttons">
           <button class="btn" data-action="menu">${t('menu')}</button>
           <button class="btn" data-action="retry">${t('retry')}</button>
@@ -1065,6 +1138,10 @@ const UI = {
         Progress.save();
         m.el.querySelector('[data-ref="coins"]').textContent = `● +${rew.coins * 2}`;
         const btn = m.el.querySelector('[data-action="double"]');
+        if (btn) btn.remove();
+      }),
+      share: () => this.doSocial(share).then(ok => {
+        const btn = ok && m.el.querySelector('[data-action="share"]');
         if (btn) btn.remove();
       }),
       menu: after(() => this.showMenu()),
